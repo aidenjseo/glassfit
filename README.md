@@ -8,9 +8,12 @@ Local, private eyewear fitting: scan your face in the browser, enter your pupill
 
 ## How it works
 
-1. The browser captures ~6 camera frames and POSTs them to a local Python backend.
+1. **One guided scan, one click**: the browser captures a frontal burst, then walks you through
+   a LEFT and a RIGHT head turn (the side views measure hinge-to-ear geometry that a frontal
+   frame can't), and uploads everything to a local Python backend.
 2. MediaPipe **FaceLandmarker** detects 478 3-D face landmarks (468 mesh + 10 iris points).
-3. Your typed PD converts landmark units to millimeters (`mm_per_unit = pd_mm / iris-center distance`).
+3. Your typed PD converts landmark units to millimeters (`mm_per_unit = pd_mm / iris-center
+   distance`); side views self-scale on the ~11.7 mm human iris diameter.
 4. A measurement extractor computes optician measurements (bridge widths, zygoma/temple width,
    canthal tilt, vertex estimate, …).
 5. A versioned rules engine turns measurements into a recommendation: frame A/B/DBL/ED/temple,
@@ -25,8 +28,9 @@ Everything runs and stays on your machine:
 - The server binds `127.0.0.1` only. No telemetry, no cloud calls.
 - Raw camera frames are processed **in memory and never written to disk** by default
   (debug opt-in: `GLASSFIT_SAVE_FRAMES=1`).
-- Only derived landmark coordinates + measurements are persisted, in `data/runtime/glassfit.db`
-  (gitignored). Deleting that one file erases all biometric data.
+- Only derived landmark coordinates + measurements are persisted, in `data/runtime/`
+  (gitignored). Stop the server and delete that folder (the `.db` plus any `-wal`/`-shm`
+  sidecars) to erase all biometric data.
 
 ## Quick start
 
