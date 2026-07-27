@@ -1,0 +1,151 @@
+# GlassFit rules-engine tunables — ruleset "1.0.0".
+# Every numeric knob used by rules/engine.py lives here so tuning is a data change, not a
+# code change. Units: lengths in millimeters (mm), angles in degrees (deg). Sides are
+# SUBJECT-anatomical (right = the subject's right eye = OD).
+
+ruleset_version: "1.0.0"
+
+# ---------------------------------------------------------------------------
+# As-worn pose bands. The project spec pins pantoscopic tilt to 5-8 deg.
+# ---------------------------------------------------------------------------
+as_worn:
+  pantoscopic:
+    default_deg: 6.5          # mid-band starting point
+    min_deg: 5.0              # spec band lower edge
+    max_deg: 8.0              # spec band upper edge
+    canthal_tilt_gain: 0.15   # extra deg of tilt per deg of mean canthal tilt
+  face_form:                  # wrap / face-form angle
+    base_deg: 7.5
+    min_deg: 5.0
+    max_deg: 10.0
+    wrap_radius_ref_mm: 95.0  # horizontal face-curvature radius of a reference face
+    gain_deg_per_mm: 0.12     # tighter curvature (smaller radius) -> more wrap
+  vertex:                     # back-vertex distance band
+    default_mm: 13.0
+    min_mm: 12.0
+    max_mm: 14.0
+    measured_gain: 0.5        # pull the default toward the scan's vertex estimate by this fraction
+
+# ---------------------------------------------------------------------------
+# High-Rx guardrails (sphere-based, applied on top of the as-worn rules).
+# ---------------------------------------------------------------------------
+rx_guardrails:
+  high_plus_sphere_d: 4.0             # max sphere >= this -> reduce pantoscopic tilt
+  high_plus_panto_reduction_deg: 1.0
+  high_minus_sphere_d: -5.0           # most-minus sphere <= this -> fit vertex close
+  high_minus_vertex_target_mm: 12.0
+  strong_rx_abs_sphere_d: 4.0         # max |sphere| >= this -> cap wrap (oblique astigmatism)
+  strong_rx_wrap_cap_deg: 6.0
+
+# ---------------------------------------------------------------------------
+# Frame box dimensions.
+# ---------------------------------------------------------------------------
+frame:
+  a_from_zygoma:              # A (boxed lens width) from zygomatic width
+    slope: 0.5
+    intercept_mm: -13.0       # accounts for DBL share + end pieces of total frame width
+    margin_mm: 3.0            # keep the frame inside the zygomatic silhouette
+    min_mm: 40.0
+    max_mm: 62.0
+  dbl:                        # distance between lenses from mid-bridge width (10 mm below crest)
+    offset_fixed_pads_mm: 2.0        # fixed acetate bridge rides above/around the crest
+    offset_adjustable_pads_mm: -1.0  # pad arms tuck in closer -> smaller DBL
+    min_mm: 14.0
+    max_mm: 24.0
+  frame_pd:
+    decentration_warn_mm: 3.0 # per-lens |frame PD - patient PD| / 2 above this -> note
+  b_from_pupil:               # B (boxed lens height)
+    base_b_over_a: 0.72
+    pupil_ratio_gain_mm: 8.0  # B change per unit of (mean pupil_height_ratio - 0.5)
+    progressive_extra_b_mm: 4.0
+    min_b_progressive_mm: 30.0  # guarantees ~18 mm corridor at the progressive target frac
+    min_b_mm: 24.0
+    max_b_mm: 45.0
+    pupil_target_frac:        # pupil position up from the lens bottom (SV spec band 0.40-0.55)
+      single_vision_distance: 0.475
+      single_vision_near: 0.475
+      sun: 0.475
+      office: 0.55
+      progressive: 0.60       # higher: leaves the progressive corridor below the fitting cross
+      default: 0.50
+  ed_margin_mm: 2.0           # effective diameter >= A + this
+
+# ---------------------------------------------------------------------------
+# Temples.
+# ---------------------------------------------------------------------------
+temples:
+  standard_lengths_mm: [135.0, 140.0, 145.0, 150.0]
+  bend_allowance_mm: 40.0     # down-bend + behind-ear run past the ear apex
+  bend_point_offset_mm: 2.0   # start the bend just past the ear crotch
+  tip_angle_default_deg: 45.0
+  tip_angle_min_deg: 35.0
+  tip_angle_max_deg: 55.0
+  raise_threshold_mm: 0.5     # ignore ear-height asymmetry below this (measurement noise)
+  raise_max_mm: 3.0           # never ask for more than this much temple raise
+
+# ---------------------------------------------------------------------------
+# Nose pads.
+# ---------------------------------------------------------------------------
+nose_pads:
+  size_thresholds:            # pad size from bridge crest height
+    low_crest_mm: 5.0         # below -> L (spread the load on a shallow bridge)
+    high_crest_mm: 9.0        # above -> S (a prominent crest carries the frame)
+  low_crest_adjustable_mm: 6.0  # below -> adjustable pads / low-bridge fit (also shrinks DBL)
+  splay:                      # frontal pad angle; default band 20-30 deg
+    default_deg: 25.0
+    min_deg: 20.0
+    max_deg: 30.0
+    bridge_width_ref_mm: 18.0
+    gain_deg_per_mm: 0.8      # wider mid-bridge -> more splay
+  flare_default_deg: 35.0
+  drop:                       # vertical pad position below the crest
+    default_mm: 3.0
+    min_mm: 1.0
+    max_mm: 6.0
+    crest_ref_mm: 7.0
+    gain_mm_per_mm: 0.3       # shallower crest -> pads sit lower on the nose
+
+# ---------------------------------------------------------------------------
+# Optics (near vision inset).
+# ---------------------------------------------------------------------------
+optics:
+  inset_per_diopter_mm: 0.1   # near-inset trim per diopter of sphere (plus -> slightly more)
+  near_inset_max_mm: 4.0
+  oc_ratio_gain_mm: 6.0       # per-side OC nudge per unit of pupil_height_ratio asymmetry
+  near_inset_mm:              # base near inset by lens intent
+    single_vision_distance: 0.0
+    single_vision_near: 2.5
+    progressive: 2.5
+    office: 2.0
+    sun: 0.0
+    default: 0.0
+
+# ---------------------------------------------------------------------------
+# Comfort proxies (all outputs on a 0-1 scale).
+# ---------------------------------------------------------------------------
+comfort:
+  endpiece_mm: 8.0            # per-side lug/end-piece width beyond the boxed lenses
+  spring_hinge_note_mm: 6.0   # head wider than the frame front by this -> spring-hinge note
+  temple_pressure:            # head width (at temples) vs frame front width
+    zero_at_mm: 0.0           # head narrower than / equal to the front -> no pressure
+    one_at_mm: 12.0           # head wider by this -> maximum pressure
+  nose_pressure:
+    base: 0.25
+    crest_ref_mm: 9.0
+    crest_range_mm: 8.0       # pressure ramps up as the crest falls below the reference
+  slip:                       # low crest + heavy implied frame -> slip risk
+    crest_weight: 0.6
+    lens_area_weight: 0.4     # bigger lens box -> heavier lenses -> more slip
+    crest_ref_mm: 9.0
+    crest_range_mm: 8.0
+    lens_area_ref_mm2: 1600.0
+    lens_area_range_mm2: 700.0
+
+# ---------------------------------------------------------------------------
+# Rounding steps for emitted values.
+# ---------------------------------------------------------------------------
+rounding:
+  length_step_mm: 0.5
+  angle_step_deg: 0.5
+  inset_step_mm: 0.25
+  comfort_decimals: 2

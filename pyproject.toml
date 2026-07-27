@@ -38,6 +38,9 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.ruff.lint.isort]
+known-first-party = ["glassfit", "glassfit_training"]
+
 [tool.pytest.ini_options]
 testpaths = ["backend/tests", "training/tests"]
 markers = ["mediapipe: requires mediapipe + downloaded .task model"]
