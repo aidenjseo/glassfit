@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+
+# ML models & runtime data (biometric — never commit)
+*.task
+*.tflite
+*.joblib
+*.pkl
+*.onnx
+data/models/
+data/runtime/
+data/exports/
+training/artifacts/
+*.db
+*.sqlite3
+
+# env / OS / editors
+.env
+.DS_Store
+.idea/
+.vscode/
