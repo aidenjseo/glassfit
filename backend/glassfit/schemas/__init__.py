@@ -2,7 +2,13 @@
 
 from .common import ImageSize, LandmarkSet, PerSide, Point2, Point3
 from .feedback import AdjustmentsMade, FeedbackIn, FeedbackOut
-from .frames import CatalogFrame, FrameListResponse
+from .frames import (
+    CatalogFrame,
+    FrameListResponse,
+    FrameMatch,
+    FrameMatchRequest,
+    FrameMatchResponse,
+)
 from .measurements import (
     BehindEar,
     BridgeWidths,
@@ -39,6 +45,9 @@ __all__ = [
     "FeedbackOut",
     "FrameDims",
     "FrameListResponse",
+    "FrameMatch",
+    "FrameMatchRequest",
+    "FrameMatchResponse",
     "FrameReport",
     "ImageSize",
     "LandmarkSet",

@@ -1,8 +1,10 @@
-"""Frame catalog schemas (Phase 2 matching builds on these)."""
+"""Frame catalog schemas: the catalog itself + Phase-2 fit matching."""
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
+
+from .recommendation import FrameDims
 
 
 class CatalogFrame(BaseModel):
@@ -27,3 +29,33 @@ class CatalogFrame(BaseModel):
 
 class FrameListResponse(BaseModel):
     frames: list[CatalogFrame]
+
+
+class FrameMatchRequest(BaseModel):
+    """Rank catalog frames against fit targets.
+
+    Provide EITHER a stored recommendation (preferred — its measurements also drive
+    the low-bridge preference) OR inline target dimensions.
+    """
+
+    recommendation_id: str | None = None
+    targets: FrameDims | None = None
+    limit: int = Field(8, ge=1, le=50)
+
+    @model_validator(mode="after")
+    def _exactly_one_source(self) -> "FrameMatchRequest":
+        if (self.recommendation_id is None) == (self.targets is None):
+            raise ValueError("provide exactly one of recommendation_id or targets")
+        return self
+
+
+class FrameMatch(BaseModel):
+    frame: CatalogFrame
+    fit_score: float = Field(ge=0.0, le=1.0)  # 1.0 = perfect dimensional match
+    deltas: dict[str, float]  # frame minus target, mm, keyed by FrameDims field
+    flags: list[str] = []  # human-readable fit caveats/positives
+
+
+class FrameMatchResponse(BaseModel):
+    targets: FrameDims
+    matches: list[FrameMatch]  # best first; hard-filtered frames are absent

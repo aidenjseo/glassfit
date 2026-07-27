@@ -8,13 +8,12 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <div class="ruler" aria-hidden="true"></div>
   <header class="app-header">
-    <span class="brand"><span class="brand-tick" aria-hidden="true"></span>GLASS<em>FIT</em></span>
+    <span class="brand">Glass<em>Fit</em></span>
     <ol class="steps" aria-label="Progress">
-      <li data-stepdot="camera" class="current"><span>01</span>Scan</li>
-      <li data-stepdot="review"><span>02</span>Inputs</li>
-      <li data-stepdot="results"><span>03</span>Results</li>
+      <li data-stepdot="camera" class="current"><span>1</span>scan</li>
+      <li data-stepdot="review"><span>2</span>inputs</li>
+      <li data-stepdot="results"><span>3</span>results</li>
     </ol>
   </header>
 
@@ -147,6 +146,7 @@
     <section data-step="results" hidden aria-labelledby="h-results">
       <h1 id="h-results" tabindex="-1">Your fit</h1>
       <div id="results-root"></div>
+      <div id="matches-root" aria-label="Catalog frames matching your fit"></div>
       <div class="row">
         <button id="btn-download" type="button">Download JSON</button>
         <button id="btn-feedback" class="primary" type="button">Log fit feedback</button>
@@ -160,6 +160,10 @@
       <p class="hint">Put your (current or recommended) frames on, then tell GlassFit what you
         feel &mdash; this trains future recommendations.</p>
       <form id="feedback-form" novalidate>
+        <fieldset id="frame-choice-fieldset" hidden>
+          <legend>Frame you tried</legend>
+          <div id="frame-choice" class="frame-choice"></div>
+        </fieldset>
         <fieldset>
           <legend>Nose pressure</legend>
           <div class="segmented" role="radiogroup" aria-label="Nose pressure, 1 none to 5 painful"

@@ -2,7 +2,7 @@
 // One mirror transform is applied to BOTH the image and the raw pixel coordinates so
 // the still matches the mirrored viewfinder; text is drawn unmirrored (x' = w - x).
 
-const ACCENT = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#0f6b62';
+const ACCENT = getComputedStyle(document.documentElement).getPropertyValue('--green').trim() || '#88b04b';
 
 export async function drawScanOverlay(canvas, frameBlob, scan) {
   const { width, height } = scan.image_size;

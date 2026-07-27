@@ -1,15 +1,29 @@
 // GlassFit wizard: state machine + wiring. Session state lives here.
 
-import { getHealth, postFeedback, postRecommendations, postScan } from './api.js';
+import { getHealth, postFeedback, postFrameMatch, postRecommendations, postScan } from './api.js';
 import { Camera } from './camera.js';
 import { $, setError } from './dom.js';
-import { buildAnalyzePayload, buildFeedbackControls, buildFeedbackPayload, initForms } from './forms.js';
+import {
+  buildAnalyzePayload,
+  buildFeedbackControls,
+  buildFeedbackPayload,
+  buildFrameChoice,
+  initForms,
+} from './forms.js';
 import { drawScanOverlay, renderQualityChips } from './overlay.js';
-import { renderResults } from './results.js';
+import { renderFrameMatches, renderResults } from './results.js';
 
 // bestFrameBlob: the one captured frame kept after upload (for the review overlay) —
 // the raw bursts (~1-2 MB of JPEGs) are released as soon as the scan succeeds.
-const session = { bursts: { front: [], left: [], right: [] }, bestFrameBlob: null, scan: null, analysis: null };
+// matchSeq: generation token so a stale in-flight /frames/match response can never
+// overwrite a newer analysis's shortlist (or mislabel feedback training data).
+const session = {
+  bursts: { front: [], left: [], right: [] },
+  bestFrameBlob: null,
+  scan: null,
+  analysis: null,
+  matchSeq: 0,
+};
 const camera = new Camera($('preview'));
 
 // The guided capture choreography: frontal burst, then two head turns whose side
@@ -172,6 +186,9 @@ function backToCamera() {
   session.scan = null;
   session.bestFrameBlob = null;
   session.bursts = { front: [], left: [], right: [] };
+  session.matchSeq += 1; // orphan any in-flight match fetch
+  $('matches-root').textContent = '';
+  buildFrameChoice([]);
   resetPoseStrip();
   setStep('camera');
   startCamera();
@@ -189,6 +206,7 @@ async function analyze(event) {
     setStep('results');
     renderResults($('results-root'), analysis);
     announce('Analysis complete. Your measurements and frame recommendation are ready.');
+    loadFrameMatches(analysis.recommendation_id); // non-blocking shortlist
   } catch (err) {
     setStep('review', { focus: false });
     if (err.kind === 'server' && /scan .* not found/i.test(err.message)) {
@@ -198,6 +216,21 @@ async function analyze(event) {
       setError($('pd-err'), err.message);
       announce(`Analysis failed: ${err.message}`);
     }
+  }
+}
+
+async function loadFrameMatches(recommendationId) {
+  const seq = ++session.matchSeq;
+  const container = $('matches-root');
+  container.textContent = '';
+  buildFrameChoice([]);
+  try {
+    const data = await postFrameMatch({ recommendation_id: recommendationId, limit: 5 });
+    if (seq !== session.matchSeq) return; // a newer analysis/rescan superseded this fetch
+    renderFrameMatches(container, data);
+    buildFrameChoice(data.matches);
+  } catch {
+    // the shortlist is an extra — the measurements/recommendation above stand alone
   }
 }
 

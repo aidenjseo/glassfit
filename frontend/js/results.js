@@ -179,6 +179,51 @@ function buildCards(data) {
   return cards;
 }
 
+const fmtDelta = (d) => (d === 0 ? '' : ` (${d > 0 ? '+' : ''}${Number(d).toFixed(1)})`);
+
+/** "Frames that fit you" — the ranked catalog shortlist from /frames/match. */
+export function renderFrameMatches(root, data) {
+  root.textContent = '';
+  if (!data.matches.length) {
+    root.appendChild(el('p', {
+      class: 'hint',
+      text: 'No catalog frames clear the fit filters for your dimensions — the measurements above still apply to any frame.',
+    }));
+    return;
+  }
+  root.appendChild(el('h2', { class: 'section-title', text: 'Frames that fit you' }));
+  const grid = el('div', { class: 'cards' });
+  for (const match of data.matches) {
+    const { frame } = match;
+    const cardEl = el('div', { class: 'card match-card' });
+    const head = el('div', { class: 'match-head' });
+    head.appendChild(el('span', { class: 'match-name', text: frame.name }));
+    head.appendChild(el('span', { class: 'match-score', text: `${Math.round(match.fit_score * 100)}% fit` }));
+    cardEl.appendChild(head);
+    const chips = el('div', { class: 'chips' });
+    for (const tag of [frame.shape, frame.material, frame.rim, frame.nose_pads.replace('_', ' ')]) {
+      chips.appendChild(el('span', { class: 'chip', text: tag }));
+    }
+    cardEl.appendChild(chips);
+    cardEl.appendChild(el('div', {
+      class: 'match-dims',
+      text:
+        `A ${frame.a_mm}${fmtDelta(match.deltas.a_mm)} · ` +
+        `DBL ${frame.dbl_mm}${fmtDelta(match.deltas.dbl_mm)} · ` +
+        `B ${frame.b_mm}${fmtDelta(match.deltas.b_mm)} · ` +
+        `temple ${frame.temple_mm}${fmtDelta(match.deltas.temple_length_mm)}`,
+    }));
+    cardEl.appendChild(meter('Dimensional fit', match.fit_score));
+    if (match.flags.length) {
+      const list = el('ul', { class: 'match-flags' });
+      for (const flag of match.flags) list.appendChild(el('li', { text: flag }));
+      cardEl.appendChild(list);
+    }
+    grid.appendChild(cardEl);
+  }
+  root.appendChild(grid);
+}
+
 export function renderResults(root, data) {
   root.textContent = '';
   if (data.measurements.quality.scale_suspect) {

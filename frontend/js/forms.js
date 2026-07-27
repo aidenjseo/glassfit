@@ -98,6 +98,35 @@ export function buildFeedbackControls() {
   });
 }
 
+/** Populate the "frame you tried" radio list from the match shortlist. */
+export function buildFrameChoice(matches) {
+  const fieldset = $('frame-choice-fieldset');
+  const container = $('frame-choice');
+  container.textContent = '';
+  if (!matches || !matches.length) {
+    fieldset.hidden = true;
+    return;
+  }
+  const options = [
+    ...matches.map((m) => ({ value: m.frame.frame_id, label: `${m.frame.name} (${m.frame.frame_id})` })),
+    { value: '', label: 'My own / another frame' },
+  ];
+  for (const [i, opt] of options.entries()) {
+    const label = document.createElement('label');
+    label.className = 'frame-option';
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = 'tried_frame';
+    input.value = opt.value;
+    input.checked = i === options.length - 1; // default: own frame
+    const span = document.createElement('span');
+    span.textContent = opt.label;
+    label.append(input, span);
+    container.appendChild(label);
+  }
+  fieldset.hidden = false;
+}
+
 /** Validate + assemble the /feedback payload, or null with an inline error. */
 export function buildFeedbackPayload(recommendationId) {
   const read = (name) => {
@@ -121,6 +150,8 @@ export function buildFeedbackPayload(recommendationId) {
     slips: slips === 'true',
     cheek_touch: cheek === 'true',
   };
+  const triedFrame = read('tried_frame');
+  if (triedFrame) payload.frame_id = triedFrame;
   const adjustments = {
     panto_delta_deg: parseFloat($('adj-panto').value),
     temple_bend_delta_mm: parseFloat($('adj-bend').value),
