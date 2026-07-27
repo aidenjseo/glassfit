@@ -67,7 +67,8 @@ All JSON under `/api/v1` (multipart for scan):
 | `POST /api/v1/scan` | camera frames → canonical 478-pt landmarks + overlay geometry + quality report |
 | `POST /api/v1/measurements` | landmarks + pd_mm → named mm measurements |
 | `POST /api/v1/recommendations` | landmarks/measurements + pd_mm (+ rx, lens intent) → full fit recommendation |
-| `GET  /api/v1/frames` | sample frame catalog (Phase 2 adds ranked matching) |
+| `GET  /api/v1/frames` | sample frame catalog |
+| `POST /api/v1/frames/match` | ranked shortlist of catalog frames vs your fit targets |
 | `POST /api/v1/feedback` | log fit feedback (training data) |
 | `GET  /api/v1/health` | liveness + versions |
 
@@ -93,7 +94,9 @@ uv run python -m glassfit_training.dataset export
 
 ## Roadmap
 
-- **Phase 1 (this):** scan → measurements → recommendation → feedback logging, end to end.
-- **Phase 2:** frame-catalog matching — ranked shortlist of real frames vs your recommendation.
+- **Phase 1 (done):** scan → measurements → recommendation → feedback logging, end to end.
+- **Phase 2 (done):** frame-catalog matching — hard fit filters (bridge ±2 mm, temple reach)
+  plus weighted dimensional scoring produce a ranked shortlist; feedback records which
+  catalog frame you tried.
 - **Phase 3:** ML residual model (scikit-learn HistGradientBoosting) learning corrections to the
   rules engine from logged feedback; per-user personalization.
