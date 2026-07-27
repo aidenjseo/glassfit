@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GlassFit</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <span class="brand">Glass<em>Fit</em></span>
+    <ol class="steps" aria-label="Progress">
+      <li data-stepdot="camera" class="current">Scan</li>
+      <li data-stepdot="review">Inputs</li>
+      <li data-stepdot="results">Results</li>
+    </ol>
+  </header>
+
+  <div id="banner" class="banner" hidden></div>
+
+  <main>
+    <!-- 1 · Camera -->
+    <section data-step="camera" aria-labelledby="h-camera">
+      <h1 id="h-camera" tabindex="-1">Scan your face</h1>
+      <p class="hint">Face the camera straight on, 40&ndash;60&nbsp;cm away, in even lighting.
+        Remove glasses for the scan.</p>
+      <div class="stage">
+        <video id="preview" playsinline muted autoplay></video>
+        <div class="guide" aria-hidden="true"></div>
+        <div id="countdown" class="countdown" hidden aria-hidden="true"></div>
+      </div>
+      <div class="row">
+        <button id="btn-start" class="primary" type="button">Start camera</button>
+        <button id="btn-scan" class="primary" type="button" disabled>Scan</button>
+      </div>
+      <div id="camera-error" class="panel error" hidden role="alert">
+        <h2 id="camera-error-title">Camera unavailable</h2>
+        <p id="camera-error-msg"></p>
+        <button id="btn-retry-camera" type="button">Try again</button>
+      </div>
+      <div id="scan-error" class="panel error" hidden role="alert">
+        <h2 id="scan-error-title">Scan failed</h2>
+        <p id="scan-error-msg"></p>
+        <ul id="scan-error-tips" class="tips"></ul>
+        <button id="btn-retry-scan" type="button">Scan again</button>
+      </div>
+    </section>
+
+    <!-- 2 · Review + inputs -->
+    <section data-step="review" hidden aria-labelledby="h-review">
+      <h1 id="h-review" tabindex="-1">Confirm your scan</h1>
+      <div class="review-grid">
+        <div class="review-visual">
+          <canvas id="overlay-canvas"
+                  aria-label="Your captured photo with detected face landmarks drawn over it"></canvas>
+          <div id="quality-chips" class="chips" aria-label="Scan quality"></div>
+          <button id="btn-retake" type="button">Retake</button>
+        </div>
+        <form id="inputs-form" novalidate>
+          <fieldset>
+            <legend>Pupillary distance</legend>
+            <label for="pd">PD in millimeters <span class="req" aria-hidden="true">*</span></label>
+            <input id="pd" name="pd" type="number" step="0.5" min="45" max="80"
+                   inputmode="decimal" required aria-describedby="pd-warn pd-err">
+            <p id="pd-warn" class="soft-warning" hidden>Unusual for adults &mdash; double-check
+              that this is millimeters.</p>
+            <p id="pd-err" class="field-error" hidden></p>
+            <details id="mono-details">
+              <summary>I know my monocular PDs</summary>
+              <div class="pair">
+                <label>Your right eye (OD)
+                  <input id="pd-od" type="number" step="0.25" min="20" max="45" inputmode="decimal">
+                </label>
+                <label>Your left eye (OS)
+                  <input id="pd-os" type="number" step="0.25" min="20" max="45" inputmode="decimal">
+                </label>
+              </div>
+              <p id="mono-err" class="field-error" hidden></p>
+            </details>
+          </fieldset>
+
+          <fieldset>
+            <legend>Lenses</legend>
+            <label for="lens-intent">Intended use</label>
+            <select id="lens-intent">
+              <option value="single_vision_distance" selected>Distance (single vision)</option>
+              <option value="single_vision_near">Reading (single vision)</option>
+              <option value="progressive">Progressive</option>
+              <option value="office">Office / occupational</option>
+              <option value="sun">Sunglasses</option>
+            </select>
+            <details id="rx-details">
+              <summary>Add my prescription (optional)</summary>
+              <div class="rx-grid">
+                <span></span><span>Sphere</span><span>Cyl</span><span>Axis</span>
+                <span class="rx-eye">OD</span>
+                <input id="rx-od-sph" type="number" step="0.25" min="-20" max="20" aria-label="Right eye sphere">
+                <input id="rx-od-cyl" type="number" step="0.25" min="-10" max="10" aria-label="Right eye cylinder">
+                <input id="rx-od-axis" type="number" step="1" min="0" max="180" aria-label="Right eye axis">
+                <span class="rx-eye">OS</span>
+                <input id="rx-os-sph" type="number" step="0.25" min="-20" max="20" aria-label="Left eye sphere">
+                <input id="rx-os-cyl" type="number" step="0.25" min="-10" max="10" aria-label="Left eye cylinder">
+                <input id="rx-os-axis" type="number" step="1" min="0" max="180" aria-label="Left eye axis">
+              </div>
+              <p id="rx-err" class="field-error" hidden></p>
+            </details>
+          </fieldset>
+          <button id="btn-analyze" class="primary" type="submit">Analyze fit</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- 3 · Analyzing -->
+    <section data-step="analyzing" hidden aria-labelledby="h-analyzing">
+      <h1 id="h-analyzing" tabindex="-1">Analyzing&hellip;</h1>
+      <div class="spinner" aria-hidden="true"></div>
+    </section>
+
+    <!-- 4 · Results -->
+    <section data-step="results" hidden aria-labelledby="h-results">
+      <h1 id="h-results" tabindex="-1">Your fit</h1>
+      <div id="results-root"></div>
+      <div class="row">
+        <button id="btn-download" type="button">Download JSON</button>
+        <button id="btn-feedback" class="primary" type="button">Log fit feedback</button>
+        <button id="btn-rescan-results" type="button">Scan again</button>
+      </div>
+    </section>
+
+    <!-- 5 · Feedback -->
+    <section data-step="feedback" hidden aria-labelledby="h-feedback">
+      <h1 id="h-feedback" tabindex="-1">How does the fit feel?</h1>
+      <p class="hint">Try your (current or recommended) frames on, then tell GlassFit what you
+        feel &mdash; this trains future recommendations.</p>
+      <form id="feedback-form" novalidate>
+        <fieldset>
+          <legend>Nose pressure</legend>
+          <div class="segmented" role="radiogroup" aria-label="Nose pressure, 1 none to 5 painful"
+               data-name="nose_pressure"></div>
+        </fieldset>
+        <fieldset>
+          <legend>Temple pinch</legend>
+          <div class="segmented" role="radiogroup" aria-label="Temple pinch, 1 none to 5 painful"
+               data-name="temple_pressure"></div>
+        </fieldset>
+        <fieldset>
+          <legend>Do they slip when you look down?</legend>
+          <div class="segmented yesno" data-name="slips"></div>
+        </fieldset>
+        <fieldset>
+          <legend>Do the lenses touch your cheeks?</legend>
+          <div class="segmented yesno" data-name="cheek_touch"></div>
+        </fieldset>
+        <details>
+          <summary>I adjusted the frame</summary>
+          <div class="pair">
+            <label>Tilt change (&deg;)
+              <input id="adj-panto" type="number" step="0.5" min="-10" max="10"></label>
+            <label>Temple bend moved (mm)
+              <input id="adj-bend" type="number" step="0.5" min="-20" max="20"></label>
+          </div>
+          <div class="pair">
+            <label>Left temple raised (mm)
+              <input id="adj-raise" type="number" step="0.5" min="-5" max="5"></label>
+            <label>Nose pad splay (&deg;)
+              <input id="adj-splay" type="number" step="1" min="-20" max="20"></label>
+          </div>
+        </details>
+        <label for="fb-comments">Comments</label>
+        <textarea id="fb-comments" rows="2"></textarea>
+        <p id="fb-err" class="field-error" hidden></p>
+        <button id="btn-submit-feedback" class="primary" type="submit">Save feedback</button>
+      </form>
+    </section>
+
+    <!-- 6 · Done -->
+    <section data-step="done" hidden aria-labelledby="h-done">
+      <h1 id="h-done" tabindex="-1">Feedback saved</h1>
+      <p class="hint">Every scan and feedback entry is stored locally and becomes training data
+        for smarter recommendations.</p>
+      <button id="btn-rescan-done" class="primary" type="button">Scan again</button>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <p>Runs entirely on your machine &middot; camera frames are never stored &middot;
+      a fitting aid, not a medical device.</p>
+  </footer>
+
+  <div id="status" class="visually-hidden" role="status" aria-live="polite"></div>
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
