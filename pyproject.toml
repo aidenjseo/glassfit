@@ -1,0 +1,44 @@
+[project]
+name = "glassfit"
+version = "0.1.0"
+description = "Local eyewear fitting: face scan -> optician measurements -> frame recommendations"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.2",
+    "python-multipart>=0.0.9",
+    "numpy>=1.26",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+scan = ["mediapipe>=0.10.35"]
+train = ["scikit-learn>=1.5", "pandas>=2.2", "pyarrow>=16", "joblib>=1.4"]
+
+[dependency-groups]
+dev = ["ruff>=0.5", "pytest>=8", "httpx>=0.27"]
+
+[project.scripts]
+glassfit = "glassfit.app:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["backend/glassfit", "training/glassfit_training"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests", "training/tests"]
+markers = ["mediapipe: requires mediapipe + downloaded .task model"]
+addopts = "-m 'not mediapipe'"
