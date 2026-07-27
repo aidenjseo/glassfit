@@ -46,6 +46,11 @@ class NotFound(GlassFitError):
     status_code = 404
 
 
+class MediapipeUnavailable(GlassFitError):
+    code = "MEDIAPIPE_UNAVAILABLE"
+    status_code = 503
+
+
 def _envelope(code: str, message: str, details: dict[str, Any]) -> dict[str, Any]:
     return {"error": {"code": code, "message": message, "details": details}}
 

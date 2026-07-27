@@ -6,6 +6,10 @@ ground-truth measurements, then projected to normalized image coordinates for a
 1280x720 frame at K_PX_PER_MM. Because the extractor's scale factor is anchored on
 the iris-center distance, every designed distance is recovered exactly.
 
+Side-view fixtures rotate the same head about the vertical (y) axis before
+projection — a NEGATIVE yaw here corresponds to the user turning their head to
+their LEFT (exposing the subject-RIGHT side to the camera).
+
 Run once to (re)write the JSON fixtures:
     uv run python backend/tests/fixtures/make_synthetic.py
 """
@@ -17,11 +21,13 @@ from pathlib import Path
 import numpy as np
 
 from glassfit.measure import indices as idx
+from glassfit.measure.extractor import TRAGUS_BEHIND_FACE_OVAL_MM
 
 OUT_DIR = Path(__file__).parent / "landmarks"
 IMAGE_W, IMAGE_H = 1280, 720
 K_PX_PER_MM = 4.0
 CENTER_PX = (640.0, 310.0)  # nasion position in the frame
+IRIS_RADIUS_MM = 5.85  # human iris diameter ~11.7 mm
 
 
 def _key_positions_mm(pd: float, zygoma: float, temple: float) -> dict[int, tuple]:
@@ -64,6 +70,20 @@ def _key_positions_mm(pd: float, zygoma: float, temple: float) -> dict[int, tupl
         idx.CHIN: (0, 85, 5),
         idx.FOREHEAD_TOP: (0, -55, 10),
     }
+    # iris rings around each center (in-plane cross) — physical diameter 11.7 mm
+    ring_offsets = [
+        (0, -IRIS_RADIUS_MM, 0),
+        (IRIS_RADIUS_MM, 0, 0),
+        (0, IRIS_RADIUS_MM, 0),
+        (-IRIS_RADIUS_MM, 0, 0),
+    ]
+    for center_idx, ring in (
+        (idx.IRIS_CENTER_RIGHT, idx.IRIS_RING_RIGHT),
+        (idx.IRIS_CENTER_LEFT, idx.IRIS_RING_LEFT),
+    ):
+        cx0, cy0, cz0 = pos[center_idx]
+        for ring_idx, (ox, oy, oz) in zip(ring, ring_offsets, strict=True):
+            pos[ring_idx] = (cx0 + ox, cy0 + oy, cz0 + oz)
     # bridge sidewall pairs (right, left) at widths 18 / 17 / 21 mm, increasing depth
     (r1, l1), (r2, l2), (r3, l3) = idx.BRIDGE_SIDEWALL_PAIRS
     pos[r1], pos[l1] = (-9, 6, 2), (9, 6, 2)
@@ -94,8 +114,8 @@ def _expected(pd: float, zygoma: float, temple: float) -> dict:
     }
 
 
-def build(pd: float, zygoma: float, temple: float, name: str) -> Path:
-    rng = np.random.default_rng(42)
+def _points_mm(pd: float, zygoma: float, temple: float, seed: int) -> np.ndarray:
+    rng = np.random.default_rng(seed)
     # Filler: a deterministic cloud roughly on the face, overwritten for used indices.
     pts_mm = np.column_stack(
         [
@@ -106,7 +126,10 @@ def build(pd: float, zygoma: float, temple: float, name: str) -> Path:
     )
     for i, p in _key_positions_mm(pd, zygoma, temple).items():
         pts_mm[i] = p
+    return pts_mm
 
+
+def _project(pts_mm: np.ndarray) -> list[list[float]]:
     cx, cy = CENTER_PX
     norm = np.column_stack(
         [
@@ -115,19 +138,59 @@ def build(pd: float, zygoma: float, temple: float, name: str) -> Path:
             (pts_mm[:, 2] * K_PX_PER_MM) / IMAGE_W,
         ]
     )
-    payload = {
-        "pd_mm_ground_truth": pd,
-        "expected": _expected(pd, zygoma, temple),
-        "landmark_set": {
-            "points": [[round(float(v), 8) for v in row] for row in norm],
-            "image_width": IMAGE_W,
-            "image_height": IMAGE_H,
-        },
-    }
+    return [[round(float(v), 8) for v in row] for row in norm]
+
+
+def _write(name: str, payload: dict) -> Path:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUT_DIR / f"{name}.json"
     out.write_text(json.dumps(payload) + "\n")
     return out
+
+
+def build_frontal(pd: float, zygoma: float, temple: float, name: str) -> Path:
+    payload = {
+        "pd_mm_ground_truth": pd,
+        "expected": _expected(pd, zygoma, temple),
+        "landmark_set": {
+            "points": _project(_points_mm(pd, zygoma, temple, seed=42)),
+            "image_width": IMAGE_W,
+            "image_height": IMAGE_H,
+        },
+    }
+    return _write(name, payload)
+
+
+def build_side(pd: float, zygoma: float, temple: float, yaw_deg: float, name: str) -> Path:
+    """Same head rotated about y before projection (negative yaw = LEFT head turn)."""
+    pts_mm = _points_mm(pd, zygoma, temple, seed=43)
+    pos = _key_positions_mm(pd, zygoma, temple)
+    theta = math.radians(yaw_deg)
+    c, s = math.cos(theta), math.sin(theta)
+    rot = np.array([[c, 0.0, s], [0.0, 1.0, 0.0], [-s, 0.0, c]])
+    rotated = pts_mm @ rot.T
+
+    right_exposed = rotated[idx.FACE_SIDE_RIGHT, 2] < rotated[idx.FACE_SIDE_LEFT, 2]
+    if right_exposed:
+        canthus, face_side = pos[idx.OUTER_CANTHUS_RIGHT], pos[idx.FACE_SIDE_RIGHT]
+    else:
+        canthus, face_side = pos[idx.OUTER_CANTHUS_LEFT], pos[idx.FACE_SIDE_LEFT]
+    hinge = float(np.linalg.norm(np.subtract(face_side, canthus))) + TRAGUS_BEHIND_FACE_OVAL_MM
+
+    payload = {
+        "pd_mm_ground_truth": pd,
+        "yaw_deg": yaw_deg,
+        "expected": {
+            "exposed_side": "right" if right_exposed else "left",
+            "hinge_to_ear_mm": hinge,
+        },
+        "landmark_set": {
+            "points": _project(rotated),
+            "image_width": IMAGE_W,
+            "image_height": IMAGE_H,
+        },
+    }
+    return _write(name, payload)
 
 
 def main() -> None:
@@ -136,7 +199,10 @@ def main() -> None:
         (58.0, 118.0, 108.0, "synthetic_narrow"),
         (68.0, 145.0, 132.0, "synthetic_wide"),
     ]:
-        print("wrote", build(pd, zygoma, temple, name))
+        print("wrote", build_frontal(pd, zygoma, temple, name))
+    # negative yaw = user turns head to their LEFT -> subject-RIGHT side exposed
+    print("wrote", build_side(63.0, 130.0, 118.0, -30.0, "synthetic_turn_left"))
+    print("wrote", build_side(63.0, 130.0, 118.0, 30.0, "synthetic_turn_right"))
 
 
 if __name__ == "__main__":

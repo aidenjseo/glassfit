@@ -14,9 +14,7 @@ __all__ = [
     "fit_circle",
     "fit_circle_radius",
     "midpoint",
-    "point_line_distance",
     "polyline_arclengths",
-    "polyline_point_at",
     "polyline_station",
 ]
 
@@ -44,45 +42,36 @@ def angle_to_horizontal_deg(v: ArrayLike) -> float:
     return float(np.degrees(np.arctan2(v_[1], abs(float(v_[0])))))
 
 
-def _as3(v: np.ndarray) -> np.ndarray:
-    """Pad a 2-D vector to 3-D (z=0); pass 3-D through unchanged."""
-    if v.shape[-1] == 3:
-        return v
-    out = np.zeros(3)
-    out[: v.shape[-1]] = v
-    return out
-
-
-def point_line_distance(p: ArrayLike, a: ArrayLike, b: ArrayLike) -> float:
-    """Distance from point ``p`` to the INFINITE line through ``a`` and ``b`` (2-D or 3-D).
-
-    A degenerate line (a == b) falls back to the point-to-point distance.
-    """
-    p_, a_, b_ = (np.asarray(x, dtype=float) for x in (p, a, b))
-    d = b_ - a_
-    n = float(np.linalg.norm(d))
-    if n == 0.0:
-        return dist(a_, p_)
-    cross = np.cross(_as3(d), _as3(p_ - a_))
-    return float(np.linalg.norm(cross) / n)
+# Radius reported for (near-)collinear input: effectively "flat", but finite so it
+# survives JSON serialization and downstream clamps.
+FLAT_RADIUS = 1.0e6
 
 
 def fit_circle(points: ArrayLike) -> tuple[np.ndarray, float]:
     """Least-squares (Kasa) circle fit through 3+ 2-D points -> (center, radius).
 
-    Exact for 3 non-collinear points, algebraic least-squares for more. Collinear input
-    yields a very large radius (flat arc) rather than raising.
+    Exact for 3 non-collinear points, algebraic least-squares for more. (Near-)collinear
+    input yields ``FLAT_RADIUS`` (a flat arc) rather than raising — without this guard
+    the ill-conditioned lstsq solution can return an arbitrary SMALL radius, which for a
+    face-wrap fit would masquerade as a maximally curved face.
     """
     pts = np.asarray(points, dtype=float)
     if pts.ndim != 2 or pts.shape[0] < 3 or pts.shape[1] != 2:
         raise ValueError("fit_circle expects an (N>=3, 2) array of 2-D points")
+    # Degeneracy check: perpendicular spread of the points around their principal axis.
+    centered = pts - pts.mean(axis=0)
+    singular_values = np.linalg.svd(centered, compute_uv=False)
+    span = float(singular_values[0])
+    perpendicular = float(singular_values[-1])
+    if span == 0.0 or perpendicular / span < 1.0e-6:
+        return pts.mean(axis=0), FLAT_RADIUS
     x, y = pts[:, 0], pts[:, 1]
     a = np.column_stack([x, y, np.ones_like(x)])
     rhs = x * x + y * y
     sol, *_ = np.linalg.lstsq(a, rhs, rcond=None)
     center = np.array([sol[0] / 2.0, sol[1] / 2.0])
     r_sq = float(sol[2] + center[0] ** 2 + center[1] ** 2)
-    return center, float(np.sqrt(max(r_sq, 0.0)))
+    return center, min(float(np.sqrt(max(r_sq, 0.0))), FLAT_RADIUS)
 
 
 def fit_circle_radius(points: ArrayLike) -> float:
@@ -122,17 +111,3 @@ def polyline_station(chain: ArrayLike, p: ArrayLike) -> float:
             best_err = err
             best_station = float(cum[i] + t * np.sqrt(length_sq))
     return best_station
-
-
-def polyline_point_at(chain: ArrayLike, station: float) -> np.ndarray:
-    """Point at arc length ``station`` along a polyline (clamped to the chain's ends)."""
-    chain_ = np.asarray(chain, dtype=float)
-    if len(chain_) < 2:
-        return chain_[0].copy()
-    cum = polyline_arclengths(chain_)
-    s = float(np.clip(station, 0.0, cum[-1]))
-    i = min(int(np.searchsorted(cum, s, side="right")) - 1, len(chain_) - 2)
-    i = max(i, 0)
-    seg_len = cum[i + 1] - cum[i]
-    t = 0.0 if seg_len == 0.0 else (s - cum[i]) / seg_len
-    return chain_[i] + t * (chain_[i + 1] - chain_[i])

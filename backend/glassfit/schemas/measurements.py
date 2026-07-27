@@ -58,6 +58,8 @@ class FaceMeasurements(BaseModel):
     face_wrap_radius_mm: float
     cheek_clearance_mm: PerSide
     hinge_to_ear_mm: PerSide  # ESTIMATE — mesh has no ear landmarks (low confidence)
+    # SIGN CONVENTION (extractor + rules engine agree): > 0 means the subject's RIGHT
+    # ear sits HIGHER than the left; the higher-ear temple gets raised to level the frame.
     ear_height_asymmetry_mm: float  # ESTIMATE (low confidence)
     behind_ear: dict[str, BehindEar]  # {"right": ..., "left": ...} ESTIMATE (low confidence)
     vertex_estimate_mm: float

@@ -40,14 +40,23 @@ def estimate_pose_deg(pts: np.ndarray) -> tuple[float, float, float]:
     roll = math.degrees(math.atan2(dx, dy))
     pitch = math.degrees(math.atan2(-dz, math.hypot(dx, dy)))
 
+    # Deliberately NOT measure.scale.resolve_sides here: this coarse estimator must work
+    # on partial landmark arrays (only 4 indices populated in gating tests), and ordering
+    # exactly two points by x IS the codebase's side convention, applied locally.
     side_a = pts[FACE_SIDE_RIGHT]
     side_b = pts[FACE_SIDE_LEFT]
-    # Resolve sides by x: subject-right is the smaller-x point in an unmirrored frame.
     right, left = (side_a, side_b) if side_a[0] <= side_b[0] else (side_b, side_a)
     face_width = float(left[0] - right[0])
     yaw = math.degrees(math.atan2(float(right[2] - left[2]), face_width))
 
     return (yaw, pitch, roll)
+
+
+def pose_of(det: DetectionResult) -> tuple[float, float, float]:
+    """(yaw, pitch, roll) in degrees: the backend's head pose, else the geometric estimate."""
+    if det.head_pose_deg is not None:
+        return det.head_pose_deg
+    return estimate_pose_deg(det.landmarks)
 
 
 def evaluate_frame(
@@ -69,9 +78,7 @@ def evaluate_frame(
     if det.face_count == 0 or det.landmarks.size == 0:
         return FrameReport(index=index, accepted=False, reject_reason="no_face")
 
-    yaw, pitch, roll = (
-        det.head_pose_deg if det.head_pose_deg is not None else estimate_pose_deg(det.landmarks)
-    )
+    yaw, pitch, roll = pose_of(det)
 
     reject_reason: str | None = None
     if det.face_count > 1:

@@ -6,15 +6,10 @@ from typing import Annotated
 from fastapi import Depends, Request
 
 from glassfit.config import Settings
-from glassfit.errors import GlassFitError
+from glassfit.errors import MediapipeUnavailable
 from glassfit.storage.repo import Repo
 from glassfit.vision.base import LandmarkBackend
 from glassfit.vision.tasks_landmarker import TasksLandmarkerBackend
-
-
-class MediapipeUnavailable(GlassFitError):
-    code = "MEDIAPIPE_UNAVAILABLE"
-    status_code = 503
 
 
 def mediapipe_available(settings: Settings) -> bool:
@@ -35,6 +30,9 @@ def get_repo(request: Request) -> Repo:
 def get_detector(request: Request) -> LandmarkBackend:
     """Lazily build the (expensive, non-thread-safe) landmarker once per app."""
     state = request.app.state
+    # Fast path: once built, don't contend with in-flight inference for the lock.
+    if state.detector is not None:
+        return state.detector
     with state.detector_lock:
         if state.detector is None:
             settings: Settings = state.settings

@@ -14,6 +14,29 @@ from glassfit.schemas import (
 from glassfit.storage.repo import Repo
 
 
+def _apply_side_view_refinement(measurements: FaceMeasurements, scan: dict) -> FaceMeasurements:
+    """Override the crude frontal hinge-to-ear estimate with side-view values."""
+    side = scan["quality"].side_views  # repo always returns a parsed ScanQuality
+    if side is None:
+        return measurements
+    refined = side.hinge_to_ear_mm
+    if refined.get("right") is None and refined.get("left") is None:
+        return measurements
+    current = measurements.hinge_to_ear_mm
+    new_side = current.model_copy(
+        update={
+            "right": refined.get("right") or current.right,
+            "left": refined.get("left") or current.left,
+        }
+    )
+    new_quality = measurements.quality.model_copy(
+        update={
+            "warnings": [*measurements.quality.warnings, "hinge_to_ear_refined_from_side_views"]
+        }
+    )
+    return measurements.model_copy(update={"hinge_to_ear_mm": new_side, "quality": new_quality})
+
+
 def _resolve_measurements(
     req: RecommendationRequest | MeasurementRequest, repo: Repo
 ) -> tuple[FaceMeasurements, str | None]:
@@ -22,7 +45,8 @@ def _resolve_measurements(
         scan = repo.get_scan(req.scan_id)
         if scan is None:
             raise NotFound(f"scan {req.scan_id!r} not found", details={"scan_id": req.scan_id})
-        return compute_measurements(scan["landmarks"], req.pd_mm), req.scan_id
+        measurements = compute_measurements(scan["landmarks"], req.pd_mm)
+        return _apply_side_view_refinement(measurements, scan), req.scan_id
     if req.landmarks is not None:
         return compute_measurements(req.landmarks, req.pd_mm), None
     assert isinstance(req, RecommendationRequest) and req.measurements is not None

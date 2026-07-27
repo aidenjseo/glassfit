@@ -6,28 +6,17 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from schema_builders import sample_measurements, sample_recommendation
 
 from glassfit.errors import NotFound
 from glassfit.schemas import (
     AdjustmentsMade,
-    AsWorn,
-    BehindEar,
-    BridgeWidths,
     CatalogFrame,
-    Comfort,
-    FaceMeasurements,
     FeedbackIn,
     FrameDims,
     FrameReport,
     LandmarkSet,
-    MeasurementQuality,
-    NosePads,
-    Optics,
-    PerSide,
-    Recommendation,
-    RuleTrace,
     ScanQuality,
-    Temples,
 )
 from glassfit.storage.db import connect
 from glassfit.storage.repo import Repo
@@ -51,60 +40,6 @@ def _quality() -> ScanQuality:
         landmark_dispersion_px=2.1,
         ok=True,
         warnings=["slight_roll"],
-    )
-
-
-def _measurements() -> FaceMeasurements:
-    return FaceMeasurements(
-        mm_per_unit=310.0,
-        pd_binocular_mm=63.0,
-        pd_monocular_mm=PerSide(right=31.4, left=31.6),
-        bridge=BridgeWidths(at_crest_mm=16.0, below_10mm_mm=18.5, below_15mm_mm=20.0),
-        bridge_crest_height_mm=8.0,
-        zygoma_width_mm=132.0,
-        temple_width_mm=138.0,
-        face_wrap_radius_mm=95.0,
-        cheek_clearance_mm=PerSide(right=6.0, left=5.5),
-        hinge_to_ear_mm=PerSide(right=98.0, left=99.0),
-        ear_height_asymmetry_mm=1.5,
-        behind_ear={
-            "right": BehindEar(drop_mm=38.0, angle_deg=42.0),
-            "left": BehindEar(drop_mm=39.0, angle_deg=41.0),
-        },
-        vertex_estimate_mm=12.5,
-        canthal_tilt_deg=PerSide(right=4.0, left=3.5),
-        pupil_height_ratio=PerSide(right=0.55, left=0.54),
-        quality=MeasurementQuality(low_confidence_fields=["hinge_to_ear_mm"]),
-    )
-
-
-def _recommendation(rec_id: str = "rec-1") -> Recommendation:
-    return Recommendation(
-        recommendation_id=rec_id,
-        ruleset_version="rules-1.0.0",
-        frame=FrameDims(a_mm=52.0, b_mm=38.0, dbl_mm=18.0, ed_mm=55.0, temple_length_mm=145.0),
-        as_worn=AsWorn(pantoscopic_deg=6.5, face_form_deg=6.0, vertex_mm=13.0),
-        optics=Optics(
-            pd_monocular_mm=PerSide(right=31.4, left=31.6),
-            oc_height_mm=PerSide(right=22.0, left=22.5),
-            inset_mm=PerSide(right=2.0, left=2.0),
-        ),
-        nose_pads=NosePads(size="M", splay_deg=30.0, flare_deg=10.0, drop_mm=3.0),
-        temples=Temples(
-            bend_point_mm_from_hinge=PerSide(right=98.0, left=99.0),
-            tip_angle_deg=45.0,
-            raise_mm=PerSide(right=0.0, left=1.0),
-        ),
-        comfort=Comfort(predicted_slip=0.2, nose_pressure=0.3, temple_pressure=0.25),
-        notes=["Pantoscopic tilt kept within 5-8 deg."],
-        rule_trace={
-            "as_worn.pantoscopic_deg": RuleTrace(
-                rule_id="panto_default",
-                inputs={"canthal_tilt": 4.0},
-                raw_value=6.5,
-                clamped=False,
-            )
-        },
     )
 
 
@@ -140,12 +75,12 @@ def _save_scan(repo: Repo, scan_id: str = "scan-1") -> str:
 
 def _save_recommendation(repo: Repo, scan_id: str | None, rec_id: str = "rec-1") -> str:
     repo.save_recommendation(
-        _recommendation(rec_id),
+        sample_recommendation(rec_id),
         scan_id=scan_id,
         user_id="local",
         pd_mm=63.0,
         mm_per_unit=310.0,
-        measurements=_measurements(),
+        measurements=sample_measurements(),
         request_extras={"rx": None, "lens_intent": "progressive", "pd_monocular": None},
     )
     return rec_id
@@ -228,8 +163,8 @@ def test_recommendation_round_trip(repo: Repo) -> None:
     assert got["user_id"] == "local"
     assert got["pd_mm"] == 63.0
     assert got["mm_per_unit"] == 310.0
-    assert got["measurements"] == _measurements()
-    assert got["recommendation"] == _recommendation()
+    assert got["measurements"] == sample_measurements()
+    assert got["recommendation"] == sample_recommendation()
     assert got["request"]["lens_intent"] == "progressive"
     assert got["engine_version"] == "rules-1.0.0"
     assert got["ml_model_version"] is None

@@ -42,6 +42,7 @@ class SideIndices:
     """Landmark indices for one anatomical side, as used by the extractor."""
 
     iris_center: int
+    iris_ring: tuple[int, ...]
     outer_canthus: int
     inner_canthus: int
     upper_lid: int
@@ -54,6 +55,7 @@ class SideIndices:
 
 _CANONICAL_RIGHT = SideIndices(
     iris_center=idx.IRIS_CENTER_RIGHT,
+    iris_ring=idx.IRIS_RING_RIGHT,
     outer_canthus=idx.OUTER_CANTHUS_RIGHT,
     inner_canthus=idx.INNER_CANTHUS_RIGHT,
     upper_lid=idx.UPPER_LID_RIGHT,
@@ -65,6 +67,7 @@ _CANONICAL_RIGHT = SideIndices(
 )
 _CANONICAL_LEFT = SideIndices(
     iris_center=idx.IRIS_CENTER_LEFT,
+    iris_ring=idx.IRIS_RING_LEFT,
     outer_canthus=idx.OUTER_CANTHUS_LEFT,
     inner_canthus=idx.INNER_CANTHUS_LEFT,
     upper_lid=idx.UPPER_LID_LEFT,

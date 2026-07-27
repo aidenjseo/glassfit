@@ -25,8 +25,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ensure_seeded(repo, app_settings.seed_frames_path)
         app.state.settings = app_settings
         app.state.repo = repo
-        app.state.detector = None  # built lazily by api.deps.get_detector
+        app.state.detector = None  # built by the prewarm below or api.deps.get_detector
         app.state.detector_lock = threading.Lock()
+
+        def _prewarm_detector() -> None:
+            """Absorb the ~0.4s model load at startup instead of the first scan."""
+            from glassfit.api.deps import mediapipe_available
+            from glassfit.vision.tasks_landmarker import TasksLandmarkerBackend
+
+            try:
+                if mediapipe_available(app_settings):
+                    detector = TasksLandmarkerBackend(app_settings.landmarker_model_path)
+                    with app.state.detector_lock:
+                        if app.state.detector is None:
+                            app.state.detector = detector
+            except Exception:  # noqa: BLE001 - prewarm is best-effort; the lazy path reports
+                pass
+
+        threading.Thread(target=_prewarm_detector, name="detector-prewarm", daemon=True).start()
         yield
         conn.close()
 

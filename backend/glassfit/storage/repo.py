@@ -21,29 +21,15 @@ from glassfit.schemas import (
     ScanQuality,
 )
 
-_FRAME_UPSERT_SQL = """
-INSERT INTO frames (frame_id, name, shape, material, rim, a_mm, b_mm, dbl_mm, ed_mm,
-                    temple_mm, weight_g, bridge_style, nose_pads, low_bridge_fit,
-                    spring_hinge, default_wrap_deg, tags_json)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(frame_id) DO UPDATE SET
-    name = excluded.name,
-    shape = excluded.shape,
-    material = excluded.material,
-    rim = excluded.rim,
-    a_mm = excluded.a_mm,
-    b_mm = excluded.b_mm,
-    dbl_mm = excluded.dbl_mm,
-    ed_mm = excluded.ed_mm,
-    temple_mm = excluded.temple_mm,
-    weight_g = excluded.weight_g,
-    bridge_style = excluded.bridge_style,
-    nose_pads = excluded.nose_pads,
-    low_bridge_fit = excluded.low_bridge_fit,
-    spring_hinge = excluded.spring_hinge,
-    default_wrap_deg = excluded.default_wrap_deg,
-    tags_json = excluded.tags_json
-"""
+# Frame column list generated from the schema itself, so adding a CatalogFrame field
+# touches exactly one place (the model) plus schema.sql.
+_FRAME_COLS = (*(f for f in CatalogFrame.model_fields if f != "tags"), "tags_json")
+_FRAME_UPSERT_SQL = (
+    f"INSERT INTO frames ({', '.join(_FRAME_COLS)}) "
+    f"VALUES ({', '.join(':' + c for c in _FRAME_COLS)}) "
+    "ON CONFLICT(frame_id) DO UPDATE SET "
+    + ", ".join(f"{c} = excluded.{c}" for c in _FRAME_COLS if c != "frame_id")
+)
 
 
 def _now_iso() -> str:
@@ -51,25 +37,15 @@ def _now_iso() -> str:
 
 
 def _row_to_frame(row: sqlite3.Row) -> CatalogFrame:
-    return CatalogFrame(
-        frame_id=row["frame_id"],
-        name=row["name"],
-        shape=row["shape"],
-        material=row["material"],
-        rim=row["rim"],
-        a_mm=row["a_mm"],
-        b_mm=row["b_mm"],
-        dbl_mm=row["dbl_mm"],
-        ed_mm=row["ed_mm"],
-        temple_mm=row["temple_mm"],
-        weight_g=row["weight_g"],
-        bridge_style=row["bridge_style"],
-        nose_pads=row["nose_pads"],
-        low_bridge_fit=bool(row["low_bridge_fit"]),
-        spring_hinge=bool(row["spring_hinge"]),
-        default_wrap_deg=row["default_wrap_deg"],
-        tags=json.loads(row["tags_json"]),
-    )
+    data = dict(row)
+    data["tags"] = json.loads(data.pop("tags_json"))
+    return CatalogFrame(**data)  # pydantic coerces sqlite's 0/1 back to bool
+
+
+def _frame_to_row(frame: CatalogFrame) -> dict[str, Any]:
+    data = frame.model_dump(exclude={"tags"})
+    data["tags_json"] = json.dumps(frame.tags)
+    return data
 
 
 class Repo:
@@ -78,6 +54,16 @@ class Repo:
     def __init__(self, conn: sqlite3.Connection):
         self._conn = conn
         self._write_lock = threading.Lock()
+
+    def _checkpoint(self) -> None:
+        """Fold the WAL back into the main .db and truncate it.
+
+        Privacy: landmark data must never linger in a `-wal` sidecar after a crash —
+        the README promises that deleting `data/runtime/` erases everything, and the
+        one-file story should hold as tightly as possible. Called after every write
+        (trivial cost for a local single-user app).
+        """
+        self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
     # --- scans -------------------------------------------------------------------------------
 
@@ -102,6 +88,7 @@ class Repo:
                     quality.model_dump_json(),
                 ),
             )
+        self._checkpoint()
 
     def get_scan(self, scan_id: str) -> dict[str, Any] | None:
         row = self._conn.execute("SELECT * FROM scans WHERE id = ?", (scan_id,)).fetchone()
@@ -151,6 +138,7 @@ class Repo:
                     ml_model_version,
                 ),
             )
+        self._checkpoint()
 
     def get_recommendation(self, rec_id: str) -> dict[str, Any] | None:
         row = self._conn.execute("SELECT * FROM recommendations WHERE id = ?", (rec_id,)).fetchone()
@@ -213,35 +201,14 @@ class Repo:
                     fb.comments,
                 ),
             )
-            return feedback_id
+        self._checkpoint()
+        return feedback_id
 
     # --- frames ------------------------------------------------------------------------------
 
     def upsert_frames(self, frames: list[CatalogFrame]) -> None:
-        rows = [
-            (
-                f.frame_id,
-                f.name,
-                f.shape,
-                f.material,
-                f.rim,
-                f.a_mm,
-                f.b_mm,
-                f.dbl_mm,
-                f.ed_mm,
-                f.temple_mm,
-                f.weight_g,
-                f.bridge_style,
-                f.nose_pads,
-                int(f.low_bridge_fit),
-                int(f.spring_hinge),
-                f.default_wrap_deg,
-                json.dumps(f.tags),
-            )
-            for f in frames
-        ]
         with self._write_lock, self._conn:
-            self._conn.executemany(_FRAME_UPSERT_SQL, rows)
+            self._conn.executemany(_FRAME_UPSERT_SQL, [_frame_to_row(f) for f in frames])
 
     def list_frames(
         self,

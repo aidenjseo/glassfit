@@ -1,21 +1,18 @@
 """Extractor vs synthetic fixtures with known ground-truth geometry."""
 
-import json
-from pathlib import Path
-
 import numpy as np
 import pytest
+from conftest import load_landmark_set, truncate_to_468
 
 from glassfit.measure.extractor import LOW_CONFIDENCE_FIELDS, compute_measurements
 from glassfit.schemas import FaceMeasurements, LandmarkSet
 
-FIXTURES = Path(__file__).parent / "fixtures" / "landmarks"
 NAMES = ["synthetic_average", "synthetic_narrow", "synthetic_wide"]
 
 
 def _load(name: str) -> tuple[LandmarkSet, float, dict]:
-    data = json.loads((FIXTURES / f"{name}.json").read_text())
-    return LandmarkSet(**data["landmark_set"]), data["pd_mm_ground_truth"], data["expected"]
+    ls, payload = load_landmark_set(name)
+    return ls, payload["pd_mm_ground_truth"], payload["expected"]
 
 
 @pytest.fixture(scope="module", params=NAMES)
@@ -86,8 +83,6 @@ def test_scale_suspect_on_implausible_pd() -> None:
 
 def test_fallback_warning_propagates_into_quality() -> None:
     ls, pd, _ = _load("synthetic_average")
-    truncated = LandmarkSet(
-        points=ls.points[:468], image_width=ls.image_width, image_height=ls.image_height
-    )
+    truncated = truncate_to_468(ls)
     m = compute_measurements(truncated, pd)
     assert "pd_scale_fallback_eye_corners" in m.quality.warnings

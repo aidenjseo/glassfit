@@ -25,7 +25,7 @@ from .recommendation import (
     RuleTrace,
     Temples,
 )
-from .scan import FrameReport, OverlaySegment, ScanQuality, ScanResponse
+from .scan import FrameReport, OverlaySegment, ScanQuality, ScanResponse, SideViewSummary
 
 __all__ = [
     "AdjustmentsMade",
@@ -59,5 +59,6 @@ __all__ = [
     "RxEye",
     "ScanQuality",
     "ScanResponse",
+    "SideViewSummary",
     "Temples",
 ]

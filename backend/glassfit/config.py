@@ -26,13 +26,21 @@ class Settings(BaseSettings):
     save_frames: bool = False
     save_frames_dir: Path = REPO_ROOT / "data" / "runtime" / "frames"
 
-    # Scan quality gates
+    # Scan quality gates (frontal burst). Yaw/roll distort the width measurements the
+    # rules engine depends on, so they stay strict. Pitch barely affects x-separations
+    # and real-world captures (webcam below eye level, portrait chin angles) routinely
+    # read +10-20° — calibrated against real portrait photos.
     max_yaw_deg: float = 12.0
-    max_pitch_deg: float = 12.0
+    max_pitch_deg: float = 20.0
     max_roll_deg: float = 15.0
-    min_face_width_frac: float = 0.30  # face bbox width / image width
+    # Calibrated against mediapipe's official portrait test image (0.23): a well-framed
+    # headshot at laptop distance spans ~0.15-0.30 of the frame width.
+    min_face_width_frac: float = 0.14
     min_accepted_frames: int = 3
     max_landmark_dispersion_px: float = 6.0  # above -> quality.ok=False warning (non-blocking)
+    # Side-view (head-turn) bursts: must show a genuine turn, but not a full profile
+    min_side_yaw_deg: float = 10.0
+    max_side_yaw_deg: float = 60.0
 
     landmark_model_name: str = "face_landmarker_v2_478"
 

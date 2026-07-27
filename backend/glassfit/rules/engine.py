@@ -2,12 +2,15 @@
 
 Every numeric output field gets a RuleTrace entry keyed by its output field path
 (e.g. "as_worn.pantoscopic_deg") so Phase-3 residual models can learn per-rule corrections.
+All traced outputs flow through one ``emit`` helper (clamp -> trace -> round), so a trace
+key can never drift from its output field.
 
 Units: lengths mm, angles deg. Sides are SUBJECT-anatomical (right = subject's right eye = OD).
 
-Sign convention (fixed here because the measurement contract leaves it open):
-`ear_height_asymmetry_mm > 0` means the SUBJECT'S RIGHT ear sits LOWER than the left. The
-temple on the lower-ear side is raised to level the frame front.
+Sign convention (matches measure/extractor.py and schemas/measurements.py):
+`ear_height_asymmetry_mm > 0` means the SUBJECT'S RIGHT ear sits HIGHER than the left.
+Raising a temple (bending it up at the endpiece) LOWERS that side of the frame front, so
+the temple on the HIGHER-ear side is raised to level the frame.
 """
 
 import math
@@ -68,13 +71,31 @@ def recommend(
     trace: dict[str, RuleTrace] = {}
     notes: list[str] = []
 
-    def put(field: str, rule_id: str, inputs: dict[str, float], raw: float, clamped: bool) -> None:
+    def emit(
+        field: str,
+        rule_id: str,
+        inputs: dict[str, float],
+        raw: float,
+        lo: float = -math.inf,
+        hi: float = math.inf,
+        *,
+        step: float | None = None,
+        decimals: int | None = None,
+        clamped: bool | None = None,
+    ) -> float:
+        """Clamp -> trace (with the PRE-clamp raw) -> round; returns the final value."""
+        val, was_clamped = _clamp(raw, lo, hi)
         trace[field] = RuleTrace(
             rule_id=rule_id,
             inputs={k: float(v) for k, v in inputs.items()},
             raw_value=float(raw),
-            clamped=clamped,
+            clamped=was_clamped if clamped is None else clamped,
         )
+        if step is not None:
+            return _round_step(val, step)
+        if decimals is not None:
+            return round(val, decimals)
+        return val
 
     intent: str = lens_intent or "single_vision_distance"
     sphere = {"right": rx.od.sphere if rx else 0.0, "left": rx.os.sphere if rx else 0.0}
@@ -85,14 +106,14 @@ def recommend(
     # --- frame: A from zygoma minus margin ---------------------------------
     az = p.frame.a_from_zygoma
     a_raw = az.slope * m.zygoma_width_mm + az.intercept_mm - az.margin_mm
-    a_val, a_clamped = _clamp(a_raw, az.min_mm, az.max_mm)
-    a_mm = _round_step(a_val, rnd.length_step_mm)
-    put(
+    a_mm = emit(
         "frame.a_mm",
         "a_from_zygoma_v1",
         {"zygoma_width_mm": m.zygoma_width_mm, "slope": az.slope, "margin_mm": az.margin_mm},
         a_raw,
-        a_clamped,
+        az.min_mm,
+        az.max_mm,
+        step=rnd.length_step_mm,
     )
 
     # --- frame: DBL from mid-bridge width + pad strategy -------------------
@@ -101,10 +122,7 @@ def recommend(
     mid_bridge = m.bridge.below_10mm_mm
     dblp = p.frame.dbl
     offset = dblp.offset_adjustable_pads_mm if adjustable_pads else dblp.offset_fixed_pads_mm
-    dbl_raw = mid_bridge + offset
-    dbl_val, dbl_clamped = _clamp(dbl_raw, dblp.min_mm, dblp.max_mm)
-    dbl_mm = _round_step(dbl_val, rnd.length_step_mm)
-    put(
+    dbl_mm = emit(
         "frame.dbl_mm",
         "dbl_from_mid_bridge_v1",
         {
@@ -112,8 +130,10 @@ def recommend(
             "offset_mm": offset,
             "adjustable_pads": float(adjustable_pads),
         },
-        dbl_raw,
-        dbl_clamped,
+        mid_bridge + offset,
+        dblp.min_mm,
+        dblp.max_mm,
+        step=rnd.length_step_mm,
     )
 
     # --- frame PD cross-check vs patient PD --------------------------------
@@ -140,9 +160,7 @@ def recommend(
     if intent == "progressive":
         b_raw += bp.progressive_extra_b_mm
         min_b = max(min_b, bp.min_b_progressive_mm)
-    b_val, b_clamped = _clamp(b_raw, min_b, bp.max_b_mm)
-    b_mm = _round_step(b_val, rnd.length_step_mm)
-    put(
+    b_mm = emit(
         "frame.b_mm",
         "b_from_pupil_v1",
         {
@@ -151,18 +169,18 @@ def recommend(
             "progressive": float(intent == "progressive"),
         },
         b_raw,
-        b_clamped,
+        min_b,
+        bp.max_b_mm,
+        step=rnd.length_step_mm,
     )
 
     # --- frame: ED >= A + margin -------------------------------------------
-    ed_raw = a_mm + p.frame.ed_margin_mm
-    ed_mm = _round_step(ed_raw, rnd.length_step_mm)
-    put(
+    ed_mm = emit(
         "frame.ed_mm",
         "ed_from_a_v1",
         {"a_mm": a_mm, "ed_margin_mm": p.frame.ed_margin_mm},
-        ed_raw,
-        False,
+        a_mm + p.frame.ed_margin_mm,
+        step=rnd.length_step_mm,
     )
 
     # --- frame: temple length rounded UP to a standard size ----------------
@@ -170,12 +188,12 @@ def recommend(
     hinge_max = max(m.hinge_to_ear_mm.right, m.hinge_to_ear_mm.left)
     temple_raw = hinge_max + tp.bend_allowance_mm
     temple_mm, temple_clamped = _round_up_standard(temple_raw, tp.standard_lengths_mm)
-    put(
+    emit(
         "frame.temple_length_mm",
         "temple_standard_size_v1",
         {"hinge_to_ear_max_mm": hinge_max, "bend_allowance_mm": tp.bend_allowance_mm},
         temple_raw,
-        temple_clamped,
+        clamped=temple_clamped,
     )
     if temple_clamped:
         notes.append(
@@ -194,14 +212,14 @@ def recommend(
             f"High-plus Rx ({max_plus:+.2f} D) — pantoscopic tilt reduced by "
             f"{g.high_plus_panto_reduction_deg:.1f} deg."
         )
-    panto_val, panto_clamped = _clamp(panto_raw, ap.min_deg, ap.max_deg)
-    panto = _round_step(panto_val, rnd.angle_step_deg)
-    put(
+    panto = emit(
         "as_worn.pantoscopic_deg",
         "panto_from_canthal_v1",
         {"mean_canthal_tilt_deg": mean_canthal, "high_plus": float(high_plus)},
         panto_raw,
-        panto_clamped,
+        ap.min_deg,
+        ap.max_deg,
+        step=rnd.angle_step_deg,
     )
 
     # --- as-worn: face form from wrap radius + strong-Rx cap ---------------
@@ -209,14 +227,14 @@ def recommend(
     ff_raw = fp.base_deg + fp.gain_deg_per_mm * (fp.wrap_radius_ref_mm - m.face_wrap_radius_mm)
     strong_rx = max_abs_sphere >= g.strong_rx_abs_sphere_d
     ff_hi = min(fp.max_deg, g.strong_rx_wrap_cap_deg) if strong_rx else fp.max_deg
-    ff_val, ff_clamped = _clamp(ff_raw, fp.min_deg, ff_hi)
-    face_form = _round_step(ff_val, rnd.angle_step_deg)
-    put(
+    face_form = emit(
         "as_worn.face_form_deg",
         "face_form_from_wrap_v1",
         {"face_wrap_radius_mm": m.face_wrap_radius_mm, "strong_rx": float(strong_rx)},
         ff_raw,
-        ff_clamped,
+        fp.min_deg,
+        ff_hi,
+        step=rnd.angle_step_deg,
     )
     if strong_rx and ff_raw > ff_hi:
         notes.append(
@@ -230,14 +248,14 @@ def recommend(
     high_minus = most_minus <= g.high_minus_sphere_d
     if high_minus:
         vertex_raw = g.high_minus_vertex_target_mm
-    vertex_val, vertex_clamped = _clamp(vertex_raw, vp.min_mm, vp.max_mm)
-    vertex = _round_step(vertex_val, rnd.length_step_mm)
-    put(
+    vertex = emit(
         "as_worn.vertex_mm",
         "vertex_default_rx_v1",
         {"vertex_estimate_mm": m.vertex_estimate_mm, "high_minus": float(high_minus)},
         vertex_raw,
-        vertex_clamped,
+        vp.min_mm,
+        vp.max_mm,
+        step=rnd.length_step_mm,
     )
     if high_minus:
         notes.append(
@@ -254,22 +272,21 @@ def recommend(
     mono_rule = "mono_pd_provided_v1" if pd_monocular is not None else "mono_pd_measured_v1"
     for side in _SIDES:
         value = getattr(mono, side)
-        put(f"optics.pd_monocular_mm.{side}", mono_rule, {"pd_monocular_mm": value}, value, False)
+        emit(f"optics.pd_monocular_mm.{side}", mono_rule, {"pd_monocular_mm": value}, value)
 
     # --- optics: OC heights from B x target pupil fraction -----------------
     frac = bp.pupil_target_frac.get(intent, bp.pupil_target_frac["default"])
     oc: dict[str, float] = {}
     for side in _SIDES:
         ratio = getattr(m.pupil_height_ratio, side)
-        oc_raw = b_mm * frac + p.optics.oc_ratio_gain_mm * (ratio - mean_ratio)
-        oc_val, oc_clamped = _clamp(oc_raw, 0.0, b_mm)
-        oc[side] = _round_step(oc_val, rnd.length_step_mm)
-        put(
+        oc[side] = emit(
             f"optics.oc_height_mm.{side}",
             "oc_height_v1",
             {"b_mm": b_mm, "target_frac": frac, "pupil_height_ratio": ratio},
-            oc_raw,
-            oc_clamped,
+            b_mm * frac + p.optics.oc_ratio_gain_mm * (ratio - mean_ratio),
+            0.0,
+            b_mm,
+            step=rnd.length_step_mm,
         )
     if intent in ("progressive", "office"):
         notes.append(
@@ -288,9 +305,7 @@ def recommend(
         if near_base > 0:
             near_raw = near_base + p.optics.inset_per_diopter_mm * sphere[side]
             near_val, near_clamped = _clamp(near_raw, 0.0, p.optics.near_inset_max_mm)
-        inset_raw = dist_dec + near_val
-        inset[side] = _round_step(inset_raw, rnd.inset_step_mm)
-        put(
+        inset[side] = emit(
             f"optics.inset_mm.{side}",
             "inset_split_by_mono_pd_v1",
             {
@@ -299,8 +314,9 @@ def recommend(
                 "sphere_d": sphere[side],
                 "near_inset_base_mm": near_base,
             },
-            inset_raw,
-            near_clamped,
+            dist_dec + near_val,
+            step=rnd.inset_step_mm,
+            clamped=near_clamped,
         )
 
     # --- nose pads ---------------------------------------------------------
@@ -312,12 +328,11 @@ def recommend(
         size = "S"
     else:
         size = "M"
-    put(
+    emit(
         "nose_pads.size",
         "pad_size_from_crest_v1",
         {"bridge_crest_height_mm": crest, "low_mm": st.low_crest_mm, "high_mm": st.high_crest_mm},
         crest,
-        False,
     )
     if adjustable_pads:
         notes.append(
@@ -325,78 +340,80 @@ def recommend(
         )
 
     sp = npd.splay
-    splay_raw = sp.default_deg + sp.gain_deg_per_mm * (mid_bridge - sp.bridge_width_ref_mm)
-    splay_val, splay_clamped = _clamp(splay_raw, sp.min_deg, sp.max_deg)
-    splay = _round_step(splay_val, rnd.angle_step_deg)
-    put(
+    splay = emit(
         "nose_pads.splay_deg",
         "pad_splay_from_bridge_v1",
         {"mid_bridge_width_mm": mid_bridge},
-        splay_raw,
-        splay_clamped,
+        sp.default_deg + sp.gain_deg_per_mm * (mid_bridge - sp.bridge_width_ref_mm),
+        sp.min_deg,
+        sp.max_deg,
+        step=rnd.angle_step_deg,
     )
 
-    flare = _round_step(npd.flare_default_deg, rnd.angle_step_deg)
-    put("nose_pads.flare_deg", "pad_flare_default_v1", {}, npd.flare_default_deg, False)
+    flare = emit(
+        "nose_pads.flare_deg",
+        "pad_flare_default_v1",
+        {},
+        npd.flare_default_deg,
+        step=rnd.angle_step_deg,
+    )
 
     dp = npd.drop
-    drop_raw = dp.default_mm + dp.gain_mm_per_mm * (dp.crest_ref_mm - crest)
-    drop_val, drop_clamped = _clamp(drop_raw, dp.min_mm, dp.max_mm)
-    drop = _round_step(drop_val, rnd.length_step_mm)
-    put(
+    drop = emit(
         "nose_pads.drop_mm",
         "pad_drop_from_crest_v1",
         {"bridge_crest_height_mm": crest},
-        drop_raw,
-        drop_clamped,
+        dp.default_mm + dp.gain_mm_per_mm * (dp.crest_ref_mm - crest),
+        dp.min_mm,
+        dp.max_mm,
+        step=rnd.length_step_mm,
     )
 
     # --- temples: bend point, tip angle, per-side raise --------------------
     bend: dict[str, float] = {}
     for side in _SIDES:
         hinge_side = getattr(m.hinge_to_ear_mm, side)
-        bend_raw = hinge_side + tp.bend_point_offset_mm
-        bend[side] = _round_step(bend_raw, rnd.length_step_mm)
-        put(
+        bend[side] = emit(
             f"temples.bend_point_mm_from_hinge.{side}",
             "temple_bend_point_v1",
             {"hinge_to_ear_mm": hinge_side, "bend_point_offset_mm": tp.bend_point_offset_mm},
-            bend_raw,
-            False,
+            hinge_side + tp.bend_point_offset_mm,
+            step=rnd.length_step_mm,
         )
 
     angles = [be.angle_deg for be in m.behind_ear.values()] or [tp.tip_angle_default_deg]
     tip_raw = sum(angles) / len(angles)
-    tip_val, tip_clamped = _clamp(tip_raw, tp.tip_angle_min_deg, tp.tip_angle_max_deg)
-    tip = _round_step(tip_val, rnd.angle_step_deg)
-    put(
+    tip = emit(
         "temples.tip_angle_deg",
         "temple_tip_angle_v1",
         {"mean_behind_ear_angle_deg": tip_raw},
         tip_raw,
-        tip_clamped,
+        tp.tip_angle_min_deg,
+        tp.tip_angle_max_deg,
+        step=rnd.angle_step_deg,
     )
 
     asym = m.ear_height_asymmetry_mm
     raw_raise = {"right": 0.0, "left": 0.0}
     if abs(asym) >= tp.raise_threshold_mm:
-        lower_side = "right" if asym > 0 else "left"
-        raw_raise[lower_side] = abs(asym)
+        # asym > 0 = right ear HIGHER; raising that temple lowers its frame side.
+        higher_side = "right" if asym > 0 else "left"
+        raw_raise[higher_side] = abs(asym)
     raise_mm: dict[str, float] = {}
     for side in _SIDES:
-        val, clamped = _clamp(raw_raise[side], 0.0, tp.raise_max_mm)
-        raise_mm[side] = _round_step(val, rnd.length_step_mm)
-        put(
+        raise_mm[side] = emit(
             f"temples.raise_mm.{side}",
             "temple_raise_from_ear_asym_v1",
             {"ear_height_asymmetry_mm": asym, "raise_threshold_mm": tp.raise_threshold_mm},
             raw_raise[side],
-            clamped,
+            0.0,
+            tp.raise_max_mm,
+            step=rnd.length_step_mm,
         )
         if raise_mm[side] > 0:
             notes.append(
                 f"Raise {side} temple {raise_mm[side]:.1f} mm to level the frame "
-                f"({side} ear sits lower)."
+                f"({side} ear sits higher)."
             )
 
     # --- comfort proxies ---------------------------------------------------
@@ -404,15 +421,14 @@ def recommend(
     front_width = frame_pd + a_mm + 2.0 * cp.endpiece_mm
     overhang = m.temple_width_mm - front_width
     tpp = cp.temple_pressure
-    tpress_raw = (overhang - tpp.zero_at_mm) / (tpp.one_at_mm - tpp.zero_at_mm)
-    tpress_val, tpress_clamped = _clamp(tpress_raw, 0.0, 1.0)
-    temple_pressure = round(tpress_val, rnd.comfort_decimals)
-    put(
+    temple_pressure = emit(
         "comfort.temple_pressure",
         "comfort_temple_pressure_v1",
         {"temple_width_mm": m.temple_width_mm, "frame_front_mm": front_width},
-        tpress_raw,
-        tpress_clamped,
+        (overhang - tpp.zero_at_mm) / (tpp.one_at_mm - tpp.zero_at_mm),
+        0.0,
+        1.0,
+        decimals=rnd.comfort_decimals,
     )
     if overhang >= cp.spring_hinge_note_mm:
         notes.append(
@@ -422,30 +438,28 @@ def recommend(
         )
 
     npp = cp.nose_pressure
-    npress_raw = npp.base + (npp.crest_ref_mm - crest) / npp.crest_range_mm
-    npress_val, npress_clamped = _clamp(npress_raw, 0.0, 1.0)
-    nose_pressure = round(npress_val, rnd.comfort_decimals)
-    put(
+    nose_pressure = emit(
         "comfort.nose_pressure",
         "comfort_nose_pressure_v1",
         {"bridge_crest_height_mm": crest},
-        npress_raw,
-        npress_clamped,
+        npp.base + (npp.crest_ref_mm - crest) / npp.crest_range_mm,
+        0.0,
+        1.0,
+        decimals=rnd.comfort_decimals,
     )
 
     sl = cp.slip
     lens_area = a_mm * b_mm
     crest_term = _clamp01((sl.crest_ref_mm - crest) / sl.crest_range_mm)
     area_term = _clamp01((lens_area - sl.lens_area_ref_mm2) / sl.lens_area_range_mm2)
-    slip_raw = sl.crest_weight * crest_term + sl.lens_area_weight * area_term
-    slip_val, slip_clamped = _clamp(slip_raw, 0.0, 1.0)
-    predicted_slip = round(slip_val, rnd.comfort_decimals)
-    put(
+    predicted_slip = emit(
         "comfort.predicted_slip",
         "comfort_slip_v1",
         {"bridge_crest_height_mm": crest, "lens_area_mm2": lens_area},
-        slip_raw,
-        slip_clamped,
+        sl.crest_weight * crest_term + sl.lens_area_weight * area_term,
+        0.0,
+        1.0,
+        decimals=rnd.comfort_decimals,
     )
 
     return Recommendation(

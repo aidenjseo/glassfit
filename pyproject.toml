@@ -43,5 +43,6 @@ known-first-party = ["glassfit", "glassfit_training"]
 
 [tool.pytest.ini_options]
 testpaths = ["backend/tests", "training/tests"]
+pythonpath = ["backend/tests"]  # shared schema_builders/conftest helpers for training/tests
 markers = ["mediapipe: requires mediapipe + downloaded .task model"]
 addopts = "-m 'not mediapipe'"

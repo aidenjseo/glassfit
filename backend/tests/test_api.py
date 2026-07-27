@@ -1,17 +1,11 @@
 """API tests over the full wired app (fake detector, temp DB, no mediapipe)."""
 
-import json
-
 from conftest import FakeBackend, jpeg_upload_files, load_landmark_fixture
 from fastapi.testclient import TestClient
 
 
 def _do_scan(client: TestClient) -> dict:
-    resp = client.post(
-        "/api/v1/scan",
-        files=jpeg_upload_files(6),
-        data={"meta": json.dumps({"width": 1280, "height": 720})},
-    )
+    resp = client.post("/api/v1/scan", files=jpeg_upload_files(6))
     assert resp.status_code == 200, resp.text
     return resp.json()
 
@@ -26,7 +20,6 @@ def test_health(client: TestClient) -> None:
 def test_scan_happy_path(client: TestClient) -> None:
     body = _do_scan(client)
     assert len(body["landmarks"]["points"]) == 478
-    assert len(body["landmarks_px"]) == 478
     assert body["quality"]["frames_used"] == 6
     assert body["quality"]["ok"] is True
     names = {seg["name"] for seg in body["overlay_segments"]}

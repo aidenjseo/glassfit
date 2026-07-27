@@ -185,13 +185,14 @@ def test_progressive_intent_raises_b_and_adds_near_inset(params):
     assert prog.optics.oc_height_mm.right > sv.optics.oc_height_mm.right
 
 
-def test_ear_asymmetry_raises_temple_on_lower_ear_side(params):
-    # Positive asymmetry: subject's RIGHT ear sits lower -> raise the right temple.
+def test_ear_asymmetry_raises_temple_on_higher_ear_side(params):
+    # Positive asymmetry: subject's RIGHT ear sits HIGHER -> raise the right temple
+    # (raising a temple lowers that side of the frame front, leveling it).
     rec = recommend(make_measurements(ear_asym_mm=2.0), None, None, params)
     assert rec.temples.raise_mm.right == pytest.approx(2.0)
     assert rec.temples.raise_mm.left == 0.0
-    assert any("Raise right temple 2.0 mm" in n for n in rec.notes)
-    # Negative asymmetry: LEFT ear lower -> raise the left temple.
+    assert any("Raise right temple 2.0 mm" in n and "sits higher" in n for n in rec.notes)
+    # Negative asymmetry: LEFT ear higher -> raise the left temple.
     rec_l = recommend(make_measurements(ear_asym_mm=-1.5), None, None, params)
     assert rec_l.temples.raise_mm.left == pytest.approx(1.5)
     assert rec_l.temples.raise_mm.right == 0.0

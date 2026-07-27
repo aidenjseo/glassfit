@@ -1,10 +1,8 @@
 """Scale anchoring and runtime side resolution."""
 
-import json
-from pathlib import Path
-
 import numpy as np
 import pytest
+from conftest import load_landmark_set, truncate_to_468
 
 from glassfit.measure.scale import (
     PD_SCALE_FALLBACK_WARNING,
@@ -14,12 +12,10 @@ from glassfit.measure.scale import (
 )
 from glassfit.schemas import LandmarkSet
 
-FIXTURE = Path(__file__).parent / "fixtures" / "landmarks" / "synthetic_average.json"
-
 
 def _fixture_landmarks() -> tuple[LandmarkSet, float]:
-    data = json.loads(FIXTURE.read_text())
-    return LandmarkSet(**data["landmark_set"]), data["pd_mm_ground_truth"]
+    ls, payload = load_landmark_set("synthetic_average")
+    return ls, payload["pd_mm_ground_truth"]
 
 
 def test_to_unit_space_is_isotropic_pixels() -> None:
@@ -44,9 +40,7 @@ def test_mm_per_unit_iris_exact() -> None:
 
 def test_mm_per_unit_fallback_on_468_points() -> None:
     ls, pd = _fixture_landmarks()
-    truncated = LandmarkSet(
-        points=ls.points[:468], image_width=ls.image_width, image_height=ls.image_height
-    )
+    truncated = truncate_to_468(ls)
     pts = to_unit_space(truncated)
     scale, warnings = mm_per_unit(pd, pts, has_iris=truncated.has_iris)
     assert scale > 0
