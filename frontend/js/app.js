@@ -2,13 +2,24 @@
 
 import { getHealth, postFeedback, postRecommendations, postScan } from './api.js';
 import { Camera } from './camera.js';
+import { $, setError } from './dom.js';
 import { buildAnalyzePayload, buildFeedbackControls, buildFeedbackPayload, initForms } from './forms.js';
 import { drawScanOverlay, renderQualityChips } from './overlay.js';
 import { renderResults } from './results.js';
 
-const $ = (id) => document.getElementById(id);
-const session = { frames: [], scan: null, analysis: null };
+// bestFrameBlob: the one captured frame kept after upload (for the review overlay) —
+// the raw bursts (~1-2 MB of JPEGs) are released as soon as the scan succeeds.
+const session = { bursts: { front: [], left: [], right: [] }, bestFrameBlob: null, scan: null, analysis: null };
 const camera = new Camera($('preview'));
+
+// The guided capture choreography: frontal burst, then two head turns whose side
+// views let the backend measure hinge-to-ear geometry far better than a frontal
+// frame can. Counts stay within the backend's 15-frame total budget.
+const PHASES = [
+  { key: 'front', label: '1/3 · Face forward — hold still', dir: null, count: 6, holdMs: 900 },
+  { key: 'left', label: '2/3 · Turn your head to your LEFT', dir: 'left', count: 3, holdMs: 1900 },
+  { key: 'right', label: '3/3 · Now turn to your RIGHT', dir: 'right', count: 3, holdMs: 1900 },
+];
 
 const STEP_DOTS = { camera: 'camera', review: 'review', analyzing: 'review', results: 'results', feedback: 'results', done: 'results' };
 
@@ -65,47 +76,92 @@ async function startCamera() {
     await camera.start();
     $('btn-scan').disabled = false;
     $('btn-start').hidden = true;
-    announce('Camera ready. Press Scan when you are aligned.');
+    announce('Camera ready. Center your face in the oval, then press Begin scan.');
   } catch (err) {
     showCameraError('Camera unavailable', err.message);
   }
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 async function countdown() {
   const overlay = $('countdown');
   overlay.hidden = false;
   for (const n of ['3', '2', '1']) {
-    overlay.textContent = n;
+    overlay.innerHTML = '';
+    const tick = document.createElement('span');
+    tick.textContent = n;
+    overlay.appendChild(tick);
     announce(n);
-    await new Promise((r) => setTimeout(r, 700));
+    await sleep(700);
   }
+  overlay.innerHTML = ''; // don't let the last digit linger in the DOM
   overlay.hidden = true;
 }
 
+function showPhase(phase) {
+  const bar = $('phase-bar');
+  $('phase-label').textContent = phase.label;
+  if (phase.dir) bar.dataset.dir = phase.dir;
+  else delete bar.dataset.dir;
+  bar.hidden = false;
+  announce(phase.label);
+}
+
+function hidePhase() {
+  $('phase-bar').hidden = true;
+}
+
+function setPoseState(key, state) {
+  document.querySelectorAll('.pose-strip li').forEach((li) => {
+    if (li.dataset.pose === key) {
+      li.classList.remove('active', 'done');
+      if (state) li.classList.add(state);
+    }
+  });
+}
+
+function resetPoseStrip() {
+  document.querySelectorAll('.pose-strip li').forEach((li) => li.classList.remove('active', 'done'));
+}
+
 async function runScan() {
-  if (!camera.ready) return;
+  if (!camera.ready) {
+    // e.g. "Scan again" after the stream was stopped — restart instead of a silent no-op
+    await startCamera();
+    if (!camera.ready) return; // startCamera surfaced its own error panel
+  }
   $('scan-error').hidden = true;
   $('btn-scan').disabled = true;
   try {
+    resetPoseStrip();
     await countdown();
-    announce('Capturing…');
-    const { blobs, width, height, frameIntervalMs } = await camera.captureFrames(6, 200);
-    session.frames = blobs;
+    for (const phase of PHASES) {
+      setPoseState(phase.key, 'active');
+      showPhase(phase);
+      await sleep(phase.holdMs); // give the user time to read and turn
+      session.bursts[phase.key] = await camera.captureFrames(phase.count, 180);
+      setPoseState(phase.key, 'done');
+      announce('Pose captured.');
+    }
+    hidePhase();
     announce('Uploading scan…');
-    const scan = await postScan(blobs, {
-      width,
-      height,
-      captured_at: new Date().toISOString(),
-      frame_interval_ms: frameIntervalMs,
-    });
+    const scan = await postScan(session.bursts);
     session.scan = scan;
+    // keep only the frame the overlay needs; release the rest of the JPEG bursts
+    session.bestFrameBlob = session.bursts.front[scan.best_frame_index];
+    session.bursts = { front: [], left: [], right: [] };
     camera.stop();
     $('btn-start').hidden = false;
     setStep('review');
-    announce(`Face detected with ${scan.landmarks.points.length} landmarks. Confirm your scan, then enter your PD.`);
-    await drawScanOverlay($('overlay-canvas'), blobs[scan.best_frame_index], scan);
-    renderQualityChips($('quality-chips'), scan.quality);
+    announce(
+      `Face detected with ${scan.landmarks.points.length} landmarks. ` +
+        'Confirm your scan, then enter your PD.'
+    );
+    renderQualityChips($('quality-chips'), scan.quality); // instant — before the bitmap decode
+    await drawScanOverlay($('overlay-canvas'), session.bestFrameBlob, scan);
   } catch (err) {
+    hidePhase();
     showScanError(err);
   } finally {
     $('btn-scan').disabled = !camera.ready;
@@ -114,7 +170,9 @@ async function runScan() {
 
 function backToCamera() {
   session.scan = null;
-  session.frames = [];
+  session.bestFrameBlob = null;
+  session.bursts = { front: [], left: [], right: [] };
+  resetPoseStrip();
   setStep('camera');
   startCamera();
 }
@@ -137,9 +195,7 @@ async function analyze(event) {
       showScanError(err);
       setStep('camera');
     } else {
-      const errEl = $('pd-err');
-      errEl.textContent = err.message;
-      errEl.hidden = false;
+      setError($('pd-err'), err.message);
       announce(`Analysis failed: ${err.message}`);
     }
   }
@@ -158,14 +214,17 @@ async function submitFeedback(event) {
   event.preventDefault();
   const payload = buildFeedbackPayload(session.analysis.recommendation_id);
   if (!payload) return;
+  const button = $('btn-submit-feedback');
+  if (button.disabled) return; // in-flight guard: no double submissions
+  button.disabled = true;
   try {
     await postFeedback(payload);
     setStep('done');
     announce('Feedback saved. Thank you.');
   } catch (err) {
-    const errEl = $('fb-err');
-    errEl.textContent = err.message;
-    errEl.hidden = false;
+    setError($('fb-err'), err.message);
+  } finally {
+    button.disabled = false;
   }
 }
 

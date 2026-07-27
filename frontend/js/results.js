@@ -1,9 +1,10 @@
 // Results rendering: measurements table + recommendation cards + fitting guidance.
 // A dumb walk over the /recommendations response — field names mirror the backend schemas.
 
-const mm = (v) => `${Number(v).toFixed(1)}`;
-const deg = (v) => `${Number(v).toFixed(1)}`;
+const mm = (v) => Number(v).toFixed(1); // one decimal — used for degrees too
+const deg = mm;
 const pct = (v) => `${Math.round(v * 100)}`;
+const rl = (ps, f = mm) => `${f(ps.right)} / ${f(ps.left)}`;
 
 function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
@@ -17,19 +18,13 @@ function el(tag, attrs = {}, children = []) {
 }
 
 function measurementRows(m) {
-  const side = (ps, fmt = mm) => ({ right: fmt(ps.right), left: fmt(ps.left) });
-  const pdm = side(m.pd_monocular_mm);
-  const tilt = side(m.canthal_tilt_deg, deg);
-  const cheek = side(m.cheek_clearance_mm);
-  const ear = side(m.hinge_to_ear_mm);
-  const ratio = side(m.pupil_height_ratio, pct);
   return [
     ['Pupillary geometry', [
       ['Binocular PD', mm(m.pd_binocular_mm), 'mm', 'pd_binocular_mm'],
-      ['Monocular PD — your right (OD)', pdm.right, 'mm', 'pd_monocular_mm'],
-      ['Monocular PD — your left (OS)', pdm.left, 'mm', 'pd_monocular_mm'],
-      ['Pupil height in eye opening (R / L)', `${ratio.right} / ${ratio.left}`, '%', 'pupil_height_ratio'],
-      ['Canthal tilt (R / L)', `${tilt.right} / ${tilt.left}`, 'deg', 'canthal_tilt_deg'],
+      ['Monocular PD — your right (OD)', mm(m.pd_monocular_mm.right), 'mm', 'pd_monocular_mm'],
+      ['Monocular PD — your left (OS)', mm(m.pd_monocular_mm.left), 'mm', 'pd_monocular_mm'],
+      ['Pupil height in eye opening (R / L)', rl(m.pupil_height_ratio, pct), '%', 'pupil_height_ratio'],
+      ['Canthal tilt (R / L)', rl(m.canthal_tilt_deg), 'deg', 'canthal_tilt_deg'],
     ]],
     ['Nose bridge', [
       ['Bridge width at crest', mm(m.bridge.at_crest_mm), 'mm', 'bridge'],
@@ -41,10 +36,10 @@ function measurementRows(m) {
       ['Cheekbone (zygoma) width', mm(m.zygoma_width_mm), 'mm', 'zygoma_width_mm'],
       ['Temple-to-temple width', mm(m.temple_width_mm), 'mm', 'temple_width_mm'],
       ['Face wrap radius', mm(m.face_wrap_radius_mm), 'mm', 'face_wrap_radius_mm'],
-      ['Cheek clearance (R / L)', `${cheek.right} / ${cheek.left}`, 'mm', 'cheek_clearance_mm'],
+      ['Cheek clearance (R / L)', rl(m.cheek_clearance_mm), 'mm', 'cheek_clearance_mm'],
     ]],
     ['Ears & temples', [
-      ['Hinge to ear (R / L)', `${ear.right} / ${ear.left}`, 'mm', 'hinge_to_ear_mm'],
+      ['Hinge to ear (R / L)', rl(m.hinge_to_ear_mm), 'mm', 'hinge_to_ear_mm'],
       ['Ear height asymmetry', mm(m.ear_height_asymmetry_mm), 'mm', 'ear_height_asymmetry_mm'],
       ['Behind-ear drop (R / L)', `${mm(m.behind_ear.right.drop_mm)} / ${mm(m.behind_ear.left.drop_mm)}`, 'mm', 'behind_ear'],
     ]],
@@ -56,6 +51,9 @@ function measurementRows(m) {
 
 function buildMeasureTable(m) {
   const lowConfidence = new Set(m.quality.low_confidence_fields || []);
+  const refinedFromSides = (m.quality.warnings || []).includes(
+    'hinge_to_ear_refined_from_side_views'
+  );
   const table = el('table', { class: 'measures' });
   table.appendChild(el('caption', { text: 'Your measurements' }));
   for (const [group, rows] of measurementRows(m)) {
@@ -65,10 +63,24 @@ function buildMeasureTable(m) {
     th.setAttribute('colspan', '3');
     for (const [label, value, unit, field] of rows) {
       const name = el('td', { text: label });
-      if (lowConfidence.has(field)) {
-        name.appendChild(el('span', { class: 'badge-est', text: 'est.', title: 'Estimated — the face mesh has no ear landmarks' }));
+      if (field === 'hinge_to_ear_mm' && refinedFromSides) {
+        name.appendChild(el('span', {
+          class: 'badge-refined',
+          text: 'side-scan',
+          title: 'Measured from your head-turn views',
+        }));
+      } else if (lowConfidence.has(field)) {
+        name.appendChild(el('span', {
+          class: 'badge-est',
+          text: 'est.',
+          title: 'Estimated — the face mesh has no ear landmarks',
+        }));
       }
-      tbody.appendChild(el('tr', {}, [name, el('td', { class: 'val', text: value }), el('td', { class: 'unit', text: unit })]));
+      tbody.appendChild(el('tr', {}, [
+        name,
+        el('td', { class: 'val', text: value }),
+        el('td', { class: 'unit', text: unit }),
+      ]));
     }
     table.appendChild(tbody);
   }
@@ -140,9 +152,9 @@ function buildCards(data) {
   ])]));
 
   cards.appendChild(card('Optics', [dl([
-    ['Monocular PD (R / L)', `${mm(optics.pd_monocular_mm.right)} / ${mm(optics.pd_monocular_mm.left)} mm`],
-    ['OC height (R / L)', `${mm(optics.oc_height_mm.right)} / ${mm(optics.oc_height_mm.left)} mm`],
-    ['Inset (R / L)', `${mm(optics.inset_mm.right)} / ${mm(optics.inset_mm.left)} mm`],
+    ['Monocular PD (R / L)', `${rl(optics.pd_monocular_mm)} mm`],
+    ['OC height (R / L)', `${rl(optics.oc_height_mm)} mm`],
+    ['Inset (R / L)', `${rl(optics.inset_mm)} mm`],
   ])]));
 
   cards.appendChild(card('Nose pads', [dl([
@@ -153,9 +165,9 @@ function buildCards(data) {
   ])]));
 
   cards.appendChild(card('Temples', [dl([
-    ['Bend from hinge (R / L)', `${mm(temples.bend_point_mm_from_hinge.right)} / ${mm(temples.bend_point_mm_from_hinge.left)} mm`],
+    ['Bend from hinge (R / L)', `${rl(temples.bend_point_mm_from_hinge)} mm`],
     ['Tip angle', `${deg(temples.tip_angle_deg)}°`],
-    ['Raise (R / L)', `${mm(temples.raise_mm.right)} / ${mm(temples.raise_mm.left)} mm`],
+    ['Raise (R / L)', `${rl(temples.raise_mm)} mm`],
   ])]));
 
   cards.appendChild(card('Comfort forecast', [

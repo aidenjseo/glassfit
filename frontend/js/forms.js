@@ -1,11 +1,6 @@
 // PD / Rx / lens-intent form: validation + analyze-payload assembly.
 
-const $ = (id) => document.getElementById(id);
-
-function setError(el, message) {
-  el.textContent = message || '';
-  el.hidden = !message;
-}
+import { $, setError } from './dom.js';
 
 export function initForms() {
   const pd = $('pd');

@@ -44,10 +44,16 @@ export function getHealth() {
   return request('/health');
 }
 
-export function postScan(blobs, meta) {
+/**
+ * Upload the capture bursts.
+ * @param {{front: Blob[], left: Blob[], right: Blob[]}} bursts — front is required;
+ *   left/right are the head-turn bursts (may be empty).
+ */
+export function postScan(bursts) {
   const form = new FormData();
-  blobs.forEach((blob, i) => form.append('frames', blob, `frame_${i}.jpg`));
-  form.append('meta', JSON.stringify(meta));
+  bursts.front.forEach((blob, i) => form.append('frames', blob, `front_${i}.jpg`));
+  (bursts.left || []).forEach((blob, i) => form.append('frames_left', blob, `left_${i}.jpg`));
+  (bursts.right || []).forEach((blob, i) => form.append('frames_right', blob, `right_${i}.jpg`));
   return request('/scan', { method: 'POST', body: form });
 }
 

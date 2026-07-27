@@ -15,6 +15,17 @@ export class Camera {
   }
 
   async start() {
+    // Coalesce concurrent calls: a double-click on "Start camera" must not open two
+    // getUserMedia streams (the loser would leak and keep the webcam LED on).
+    if (this._starting) return this._starting;
+    this._starting = this._start().finally(() => {
+      this._starting = null;
+    });
+    return this._starting;
+  }
+
+  async _start() {
+    if (this.stream) this.stop(); // sequential restart: release the old stream first
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       throw new CameraError(
         'unsupported',
@@ -61,7 +72,10 @@ export class Camera {
   async captureFrames(count = 6, intervalMs = 200) {
     const w = this.video.videoWidth;
     const h = this.video.videoHeight;
-    const canvas = document.createElement('canvas');
+    if (!this.canvas) {
+      this.canvas = document.createElement('canvas');
+    }
+    const canvas = this.canvas;
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext('2d');
@@ -72,7 +86,7 @@ export class Camera {
       if (blob) blobs.push(blob);
       if (i < count - 1) await new Promise((r) => setTimeout(r, intervalMs));
     }
-    return { blobs, width: w, height: h, frameIntervalMs: intervalMs };
+    return blobs;
   }
 
   stop() {

@@ -16,12 +16,12 @@ export async function drawScanOverlay(canvas, frameBlob, scan) {
   ctx.scale(-1, 1); // mirror: match the selfie viewfinder
   ctx.drawImage(bitmap, 0, 0, width, height);
 
-  // all landmarks: faint dots
+  // all landmarks: faint dots (pixel positions derived from the normalized set)
   ctx.fillStyle = ACCENT;
   ctx.globalAlpha = 0.35;
-  for (const [x, y] of scan.landmarks_px) {
+  for (const [nx, ny] of scan.landmarks.points) {
     ctx.beginPath();
-    ctx.arc(x, y, Math.max(1.5, width / 640), 0, Math.PI * 2);
+    ctx.arc(nx * width, ny * height, Math.max(1.5, width / 640), 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -68,7 +68,7 @@ export function renderQualityChips(el, quality) {
     chip.textContent = text;
     el.appendChild(chip);
   };
-  add(`Frames used ${quality.frames_used}/${quality.frames_received}`, quality.ok ? 'good' : 'warn');
+  add(`Frames ${quality.frames_used}/${quality.frames_received}`, quality.ok ? 'good' : 'warn');
   const best = quality.frame_reports.find((r) => r.accepted);
   if (best && best.yaw_deg != null) {
     const posed = Math.abs(best.yaw_deg) < 8 && Math.abs(best.pitch_deg || 0) < 8;
@@ -76,5 +76,11 @@ export function renderQualityChips(el, quality) {
   }
   const jitter = quality.landmark_dispersion_px;
   add(`Stability ${jitter < 3 ? 'high' : jitter < 6 ? 'ok' : 'low'}`, jitter < 6 ? 'good' : 'warn');
+  const side = quality.side_views;
+  if (side) {
+    // subject-right side is exposed by the LEFT head turn, and vice versa
+    add(`Left turn ${side.right_frames > 0 ? '✓' : '—'}`, side.right_frames > 0 ? 'good' : 'warn');
+    add(`Right turn ${side.left_frames > 0 ? '✓' : '—'}`, side.left_frames > 0 ? 'good' : 'warn');
+  }
   if (!quality.ok) add('Consider rescanning', 'warn');
 }

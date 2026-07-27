@@ -3,16 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>GlassFit</title>
+  <title>GlassFit — face scan &amp; frame fitting</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%91%93%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+  <div class="ruler" aria-hidden="true"></div>
   <header class="app-header">
-    <span class="brand">Glass<em>Fit</em></span>
+    <span class="brand"><span class="brand-tick" aria-hidden="true"></span>GLASS<em>FIT</em></span>
     <ol class="steps" aria-label="Progress">
-      <li data-stepdot="camera" class="current">Scan</li>
-      <li data-stepdot="review">Inputs</li>
-      <li data-stepdot="results">Results</li>
+      <li data-stepdot="camera" class="current"><span>01</span>Scan</li>
+      <li data-stepdot="review"><span>02</span>Inputs</li>
+      <li data-stepdot="results"><span>03</span>Results</li>
     </ol>
   </header>
 
@@ -22,16 +24,41 @@
     <!-- 1 · Camera -->
     <section data-step="camera" aria-labelledby="h-camera">
       <h1 id="h-camera" tabindex="-1">Scan your face</h1>
-      <p class="hint">Face the camera straight on, 40&ndash;60&nbsp;cm away, in even lighting.
-        Remove glasses for the scan.</p>
+      <p class="hint"><strong>One scan, one click.</strong> Press <strong>Begin scan</strong> and
+        the app guides you through three poses automatically &mdash; nothing to do separately.
+        Sit 40&ndash;60&nbsp;cm away in even light, <strong>glasses off</strong> (you&rsquo;re
+        measuring your face; frames come later).</p>
+      <ol class="pose-strip" aria-label="The three scan poses">
+        <li data-pose="front">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="12" rx="6.5" ry="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="9.5" cy="10.5" r="1" fill="currentColor"/><circle cx="14.5" cy="10.5" r="1" fill="currentColor"/></svg>
+          <span class="pose-num">1</span><span class="pose-name">Face forward</span>
+          <span class="pose-state" aria-hidden="true"></span>
+        </li>
+        <li data-pose="left">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 12 L3.5 12 M5.5 9.5 L3 12 l2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><ellipse cx="15" cy="12" rx="5" ry="8" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12.8" cy="10.5" r="1" fill="currentColor"/></svg>
+          <span class="pose-num">2</span><span class="pose-name">Turn left</span>
+          <span class="pose-state" aria-hidden="true"></span>
+        </li>
+        <li data-pose="right">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 12 L20.5 12 M18.5 9.5 L21 12 l-2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><ellipse cx="9" cy="12" rx="5" ry="8" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="11.2" cy="10.5" r="1" fill="currentColor"/></svg>
+          <span class="pose-num">3</span><span class="pose-name">Turn right</span>
+          <span class="pose-state" aria-hidden="true"></span>
+        </li>
+      </ol>
       <div class="stage">
         <video id="preview" playsinline muted autoplay></video>
-        <div class="guide" aria-hidden="true"></div>
+        <div class="brackets" aria-hidden="true"></div>
+        <div class="guide" aria-hidden="true"><div class="oval"></div></div>
+        <div id="phase-bar" class="phase-bar" hidden aria-hidden="true">
+          <span class="chevrons left" aria-hidden="true">&#8249;&#8249;&#8249;</span>
+          <span id="phase-label"></span>
+          <span class="chevrons right" aria-hidden="true">&#8250;&#8250;&#8250;</span>
+        </div>
         <div id="countdown" class="countdown" hidden aria-hidden="true"></div>
       </div>
       <div class="row">
         <button id="btn-start" class="primary" type="button">Start camera</button>
-        <button id="btn-scan" class="primary" type="button" disabled>Scan</button>
+        <button id="btn-scan" class="primary" type="button" disabled>Begin scan</button>
       </div>
       <div id="camera-error" class="panel error" hidden role="alert">
         <h2 id="camera-error-title">Camera unavailable</h2>
@@ -54,7 +81,7 @@
           <canvas id="overlay-canvas"
                   aria-label="Your captured photo with detected face landmarks drawn over it"></canvas>
           <div id="quality-chips" class="chips" aria-label="Scan quality"></div>
-          <button id="btn-retake" type="button">Retake</button>
+          <button id="btn-retake" type="button">Retake scan</button>
         </div>
         <form id="inputs-form" novalidate>
           <fieldset>
@@ -130,7 +157,7 @@
     <!-- 5 · Feedback -->
     <section data-step="feedback" hidden aria-labelledby="h-feedback">
       <h1 id="h-feedback" tabindex="-1">How does the fit feel?</h1>
-      <p class="hint">Try your (current or recommended) frames on, then tell GlassFit what you
+      <p class="hint">Put your (current or recommended) frames on, then tell GlassFit what you
         feel &mdash; this trains future recommendations.</p>
       <form id="feedback-form" novalidate>
         <fieldset>
