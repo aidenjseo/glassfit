@@ -290,6 +290,19 @@ table.measures td.unit { color: var(--faint); width: 3.2rem; font-size: 0.82rem;
 .match-flags li { font-size: 0.85rem; color: var(--muted); padding: 0.12rem 0 0.12rem 1.1rem; position: relative; }
 .match-flags li::before { content: "·"; position: absolute; left: 0.3rem; color: var(--green-text); }
 
+.why-score { margin-top: 0.55rem; }
+.why-score summary { font-size: 0.875rem; }
+.why-score .meter { margin: 0.4rem 0 0.4rem 0.2rem; }
+.rate-row {
+  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  margin-top: 0.7rem; padding-top: 0.6rem; border-top: 1px solid var(--hairline);
+}
+.rate-label { font-size: 0.875rem; color: var(--muted); }
+.segmented.rate span { padding: 0.3rem 0.7rem; font-size: 0.875rem; }
+.rate-status { font-size: 0.85rem; font-style: italic; }
+.rate-status.good { color: var(--green-text); }
+.rate-status.bad { color: var(--error); }
+
 /* Feedback frame selector */
 .frame-choice { display: flex; flex-direction: column; gap: 0.25rem; margin-top: 0.4rem; }
 .frame-option { display: flex; align-items: center; gap: 0.55rem; margin: 0; cursor: pointer; }

@@ -68,7 +68,8 @@ All JSON under `/api/v1` (multipart for scan):
 | `POST /api/v1/measurements` | landmarks + pd_mm → named mm measurements |
 | `POST /api/v1/recommendations` | landmarks/measurements + pd_mm (+ rx, lens intent) → full fit recommendation |
 | `GET  /api/v1/frames` | sample frame catalog |
-| `POST /api/v1/frames/match` | ranked shortlist of catalog frames vs your fit targets |
+| `POST /api/v1/frames/match` | ranked shortlist: 8 named fit components (centration, bridge, width, …) |
+| `POST /api/v1/frames/ratings` | rate a suggested frame 1–5 (training labels for the matcher) |
 | `POST /api/v1/feedback` | log fit feedback (training data) |
 | `GET  /api/v1/health` | liveness + versions |
 
@@ -95,8 +96,12 @@ uv run python -m glassfit_training.dataset export
 ## Roadmap
 
 - **Phase 1 (done):** scan → measurements → recommendation → feedback logging, end to end.
-- **Phase 2 (done):** frame-catalog matching — hard fit filters (bridge ±2 mm, temple reach)
-  plus weighted dimensional scoring produce a ranked shortlist; feedback records which
-  catalog frame you tried.
+- **Phase 2 (done):** frame-catalog matching — hard fit filters (bridge ±2 mm fixed / ±3 mm
+  adjustable pads, temple reach) plus a weighted sum of eight explainable components:
+  optical centration (decentration per lens), asymmetric bridge fit, head-width pressure,
+  lens depth vs cheek clearance, temple length, wrap harmony, weight × grip, and face-shape
+  affinity (from face length/jaw-width proportions). Every suggestion shows its component
+  breakdown and can be **rated 1–5**; ratings persist with a snapshot of the matcher's own
+  claims (`uv run python -m glassfit_training.dataset export --table ratings`).
 - **Phase 3:** ML residual model (scikit-learn HistGradientBoosting) learning corrections to the
   rules engine from logged feedback; per-user personalization.

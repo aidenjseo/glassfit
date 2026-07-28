@@ -181,8 +181,71 @@ function buildCards(data) {
 
 const fmtDelta = (d) => (d === 0 ? '' : ` (${d > 0 ? '+' : ''}${Number(d).toFixed(1)})`);
 
-/** "Frames that fit you" — the ranked catalog shortlist from /frames/match. */
-export function renderFrameMatches(root, data) {
+const COMPONENT_LABELS = {
+  optical_centration: 'Optical centering',
+  bridge_fit: 'Bridge fit',
+  width_fit: 'Head width',
+  lens_height: 'Lens depth vs cheeks',
+  temple_fit: 'Temple length',
+  wrap_harmony: 'Wrap harmony',
+  weight_slip: 'Weight & grip',
+  shape_affinity: 'Shape for your face',
+};
+
+function componentBreakdown(components) {
+  const details = el('details', { class: 'why-score' });
+  details.appendChild(el('summary', { text: 'Why this score' }));
+  const sorted = Object.entries(components).sort((a, b) => b[1] - a[1]);
+  for (const [name, value] of sorted) {
+    details.appendChild(meter(COMPONENT_LABELS[name] || name, value));
+  }
+  return details;
+}
+
+function ratingControl(match, onRate) {
+  const wrap = el('div', { class: 'rate-row' });
+  wrap.appendChild(el('span', { class: 'rate-label', text: 'Rate this suggestion' }));
+  const group = el('div', {
+    class: 'segmented rate',
+    role: 'radiogroup',
+    'aria-label': `Rate the ${match.frame.name} suggestion, 1 bad to 5 great`,
+  });
+  const status = el('span', { class: 'rate-status', role: 'status' }); // aria-live for SRs
+  for (const n of [1, 2, 3, 4, 5]) {
+    const label = el('label');
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = `rate_${match.frame.frame_id}`;
+    input.value = String(n);
+    input.addEventListener('change', async () => {
+      group.querySelectorAll('input').forEach((r) => { r.disabled = true; });
+      try {
+        await onRate(match, n);
+        status.textContent = `✓ rated ${n}/5 — click to change`;
+        status.className = 'rate-status good';
+        // re-rating is allowed (the backend upserts, latest wins) — this also makes a
+        // keyboard arrow-key stray or a misclick correctable instead of permanent
+        group.querySelectorAll('input').forEach((r) => { r.disabled = false; });
+      } catch {
+        status.textContent = 'could not save — try again';
+        status.className = 'rate-status bad';
+        group.querySelectorAll('input').forEach((r) => {
+          r.disabled = false;
+          r.checked = false; // unchecked again so retrying the SAME value fires change
+        });
+      }
+    });
+    const span = el('span', { text: String(n) });
+    label.append(input, span);
+    group.appendChild(label);
+  }
+  wrap.append(group, status);
+  return wrap;
+}
+
+/** "Frames that fit you" — the ranked catalog shortlist from /frames/match.
+ * `onRate(match, rating)` (optional) enables the per-frame rating control. */
+export function renderFrameMatches(root, data, onRate) {
   root.textContent = '';
   if (!data.matches.length) {
     root.appendChild(el('p', {
@@ -213,12 +276,16 @@ export function renderFrameMatches(root, data) {
         `B ${frame.b_mm}${fmtDelta(match.deltas.b_mm)} · ` +
         `temple ${frame.temple_mm}${fmtDelta(match.deltas.temple_length_mm)}`,
     }));
-    cardEl.appendChild(meter('Dimensional fit', match.fit_score));
+    cardEl.appendChild(meter('Overall fit', match.fit_score));
     if (match.flags.length) {
       const list = el('ul', { class: 'match-flags' });
       for (const flag of match.flags) list.appendChild(el('li', { text: flag }));
       cardEl.appendChild(list);
     }
+    if (match.components && Object.keys(match.components).length) {
+      cardEl.appendChild(componentBreakdown(match.components));
+    }
+    if (onRate) cardEl.appendChild(ratingControl(match, onRate));
     grid.appendChild(cardEl);
   }
   root.appendChild(grid);

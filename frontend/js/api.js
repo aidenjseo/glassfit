@@ -80,3 +80,11 @@ export function postFrameMatch(payload) {
     body: JSON.stringify(payload),
   });
 }
+
+export function postMatchRating(payload) {
+  return request('/frames/ratings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}

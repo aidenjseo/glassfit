@@ -1,6 +1,13 @@
 // GlassFit wizard: state machine + wiring. Session state lives here.
 
-import { getHealth, postFeedback, postFrameMatch, postRecommendations, postScan } from './api.js';
+import {
+  getHealth,
+  postFeedback,
+  postFrameMatch,
+  postMatchRating,
+  postRecommendations,
+  postScan,
+} from './api.js';
 import { Camera } from './camera.js';
 import { $, setError } from './dom.js';
 import {
@@ -227,7 +234,17 @@ async function loadFrameMatches(recommendationId) {
   try {
     const data = await postFrameMatch({ recommendation_id: recommendationId, limit: 5 });
     if (seq !== session.matchSeq) return; // a newer analysis/rescan superseded this fetch
-    renderFrameMatches(container, data);
+    // Ratings snapshot the matcher's own claims (fit_score + components) so the
+    // learning loop can compare them against human judgment after re-tuning.
+    const onRate = (match, rating) =>
+      postMatchRating({
+        recommendation_id: recommendationId,
+        frame_id: match.frame.frame_id,
+        rating,
+        fit_score: match.fit_score,
+        components: match.components,
+      });
+    renderFrameMatches(container, data, onRate);
     buildFrameChoice(data.matches);
   } catch {
     // the shortlist is an extra — the measurements/recommendation above stand alone
