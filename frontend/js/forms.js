@@ -37,6 +37,10 @@ export function buildAnalyzePayload(scanId) {
     if (!Number.isFinite(od) || !Number.isFinite(os)) {
       setError(monoErr, 'Enter both monocular values, or clear both.');
       ok = false;
+    } else if (od < 20 || od > 45 || os < 20 || os > 45) {
+      // bounds BEFORE the sum check: a decimal slip like 3.15/59.85 passes the sum
+      setError(monoErr, 'Each monocular PD should be 20–45 mm.');
+      ok = false;
     } else if (Math.abs(od + os - pdVal) > 1.0) {
       setError(monoErr, `OD + OS should equal your PD within 1 mm (got ${(od + os).toFixed(1)}).`);
       ok = false;
@@ -55,19 +59,27 @@ export function buildAnalyzePayload(scanId) {
   if (anyRx) {
     const rx = {};
     for (const [eye, vals] of Object.entries(rxRaw)) {
+      const sphere = parseFloat(vals.sphere) || 0;
       const cyl = parseFloat(vals.cyl) || 0;
       const axis = parseInt(vals.axis, 10);
+      const label = eye.toUpperCase();
       if (cyl !== 0 && !Number.isFinite(axis)) {
-        setError(rxErr, `Axis is required when ${eye.toUpperCase()} has a cylinder value.`);
+        setError(rxErr, `Axis is required when ${label} has a cylinder value.`);
+        ok = false;
+      } else if (Number.isFinite(axis) && (axis < 0 || axis > 180)) {
+        setError(rxErr, `${label} axis must be between 0 and 180 degrees.`);
+        ok = false;
+      } else if (sphere < -20 || sphere > 20) {
+        setError(rxErr, `${label} sphere must be between −20 and +20 D.`);
+        ok = false;
+      } else if (cyl < -10 || cyl > 10) {
+        setError(rxErr, `${label} cylinder must be between −10 and +10 D.`);
         ok = false;
       }
-      rx[eye] = {
-        sphere: parseFloat(vals.sphere) || 0,
-        cyl,
-        axis: Number.isFinite(axis) ? axis : 0,
-      };
+      rx[eye] = { sphere, cyl, axis: Number.isFinite(axis) ? axis : 0 };
     }
     if (ok) payload.rx = rx;
+    if (!ok) $('rx-details').open = true; // surface the flagged field
   }
 
   return ok ? payload : null;

@@ -32,6 +32,14 @@ const session = {
   matchSeq: 0,
 };
 const camera = new Camera($('preview'));
+camera.onLost = () => {
+  $('btn-scan').disabled = true;
+  $('btn-start').hidden = false;
+  showCameraError(
+    'Camera stopped',
+    'The camera turned off — it may be in use elsewhere or its permission was revoked. Start it again when ready.'
+  );
+};
 
 // The guided capture choreography: frontal burst, then two head turns whose side
 // views let the backend measure hinge-to-ear geometry far better than a frontal
@@ -196,6 +204,7 @@ function backToCamera() {
   session.bursts = { front: [], left: [], right: [] };
   session.matchSeq += 1; // orphan any in-flight match fetch
   $('matches-root').textContent = '';
+  $('feedback-form').reset(); // stale answers must never ride into a new session
   buildFrameChoice([]);
   resetPoseStrip();
   setStep('camera');
@@ -270,6 +279,7 @@ async function submitFeedback(event) {
   button.disabled = true;
   try {
     await postFeedback(payload);
+    $('feedback-form').reset(); // a rescan must start from a blank feedback slate
     setStep('done');
     announce('Feedback saved. Thank you.');
   } catch (err) {

@@ -11,6 +11,7 @@ export class Camera {
   constructor(videoEl) {
     this.video = videoEl;
     this.stream = null;
+    this.onLost = null; // called when the track dies externally (permission revoked, device lost)
     window.addEventListener('pagehide', () => this.stop());
   }
 
@@ -56,6 +57,19 @@ export class Camera {
       }
       throw new CameraError('busy', `Could not start the camera (${name || err}).`);
     }
+    // Detect external track death (permission revoked mid-session, device unplugged,
+    // another app claiming the webcam) — without this the preview freezes on the last
+    // frame, `ready` stays true, and a scan would upload 12 copies of a dead frame.
+    for (const track of this.stream.getTracks()) {
+      track.addEventListener(
+        'ended',
+        () => {
+          this.stop();
+          this.onLost?.();
+        },
+        { once: true }
+      );
+    }
     this.video.srcObject = this.stream;
     await new Promise((resolve) => {
       if (this.video.readyState >= 1 && this.video.videoWidth > 0) return resolve();
@@ -65,7 +79,11 @@ export class Camera {
   }
 
   get ready() {
-    return Boolean(this.stream) && this.video.videoWidth > 0;
+    return (
+      Boolean(this.stream) &&
+      this.video.videoWidth > 0 &&
+      this.stream.getVideoTracks().some((t) => t.readyState === 'live')
+    );
   }
 
   /** Capture `count` unmirrored JPEG Blobs off a hidden canvas. */

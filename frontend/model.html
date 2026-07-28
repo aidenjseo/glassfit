@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GlassFit — how it works</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%91%93%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .page { max-width: 720px; }
+    .page h2 { font-size: 1.375rem; margin: 2.2rem 0 0.6rem; }
+    .page p, .page li { color: var(--muted); }
+    .page strong { color: var(--ink); }
+    .page table { border-collapse: collapse; width: 100%; margin: 0.8rem 0 1.2rem; font-size: 0.9375rem; }
+    .page th, .page td { text-align: left; padding: 0.35rem 0.8rem 0.35rem 0; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+    .page th { font-weight: 600; color: var(--ink); }
+    .page td.num { white-space: nowrap; } /* tabular-nums comes from styles.css .num */
+    .note { font-style: italic; font-size: 0.9375rem; }
+    code { font-family: ui-monospace, Menlo, monospace; font-size: 0.85em; background: var(--surface); border: 1px solid var(--hairline); border-radius: 3px; padding: 0.05em 0.35em; }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <span class="brand"><a href="/" style="text-decoration:none;color:inherit">Glass<em>Fit</em></a></span>
+    <ol class="steps" aria-label="Navigation"><li class="current">how it works</li></ol>
+  </header>
+  <main class="page">
+    <h1>How GlassFit works</h1>
+    <p class="note">Everything below runs on your machine. No cloud, no telemetry; camera frames
+      are processed in memory and never written to disk.</p>
+
+    <h2>1 · Face landmarks</h2>
+    <p>The scan uses Google's <strong>MediaPipe FaceLandmarker</strong> (the Tasks-API successor
+      to the retired <code>face_mesh</code> solution): a ~3&nbsp;MB on-device model producing
+      <strong>478 three-dimensional landmarks</strong> — the 468-point face mesh plus 10 iris
+      points. One guided scan captures a frontal burst of six frames and two head-turn bursts.
+      Frontal frames are quality-gated (yaw ≤ 12°, pitch ≤ 20°, roll ≤ 15° — calibrated on real
+      portrait photos), rigidly aligned (Procrustes), and reduced to one canonical landmark set
+      by a per-landmark median, which suppresses blinks and jitter.</p>
+
+    <h2>2 · Millimeters</h2>
+    <p>Landmarks arrive in image coordinates. Your typed <strong>pupillary distance</strong>
+      anchors the scale: <code>mm&nbsp;per&nbsp;unit&nbsp;=&nbsp;PD&nbsp;/&nbsp;iris-center
+      distance</code>. The head-turn views can't use PD (it foreshortens with rotation), so they
+      self-scale on the near eye's iris ring — the human iris diameter is nearly constant at
+      <strong>≈&nbsp;11.7&nbsp;mm</strong>, the same trick MediaPipe Iris uses for depth.</p>
+
+    <h2>3 · Measurements, honestly labeled</h2>
+    <p>From the canonical set GlassFit computes optician measurements: binocular and monocular
+      PDs, bridge widths at three depths, bridge-crest height, cheekbone and temple widths, face
+      length and jaw width, wrap radius, cheek clearance, canthal tilt, pupil height, and a
+      vertex estimate. The mesh has <strong>no ear landmarks</strong>, so ear-dependent values
+      are estimates — marked <em>est.</em> in the results — and are upgraded to real geometry
+      (marked <em>side-scan</em>) when the head-turn views captured your ear region. Sides are
+      resolved from the image at runtime, never from index tables.</p>
+
+    <h2>4 · The rules engine</h2>
+    <p>A pure, versioned rules engine (every tunable lives in a YAML file) maps measurements to
+      a recommendation: frame A/B/DBL/ED/temple, as-worn pantoscopic tilt (kept in the 5–8°
+      band), face-form wrap (5–10°), vertex (12–14&nbsp;mm), nose-pad setup, temple bends, and
+      per-side raises. Every numeric output records a <code>rule_trace</code> — which rule fired,
+      its inputs, the pre-clamp value — so the learning loop can later compute residuals
+      against it.</p>
+
+    <h2>5 · Frame matching</h2>
+    <p>Catalog frames pass hard filters first (bridge within ±2&nbsp;mm, ±3&nbsp;mm with
+      adjustable pads; temple long enough to reach your ear), then are ranked by a weighted sum
+      of eight explainable components — the breakdown shown under “Why this score”:</p>
+    <table>
+      <tr><th>Component</th><th>Weight</th><th>Judges</th></tr>
+      <tr><td>Optical centration</td><td class="num">0.20</td><td>decentration per lens: frame PD (A+DBL) vs your PD</td></tr>
+      <tr><td>Bridge fit</td><td class="num">0.22</td><td>DBL error, asymmetric — narrow pinches; pads soften wide</td></tr>
+      <tr><td>Width fit</td><td class="num">0.15</td><td>frame front vs measured temple width (pinch / slide)</td></tr>
+      <tr><td>Lens height</td><td class="num">0.12</td><td>lens depth below pupil vs measured cheek clearance</td></tr>
+      <tr><td>Shape affinity</td><td class="num">0.12</td><td>face-proportion heuristics (length/width, jaw/cheek, canthal tilt)</td></tr>
+      <tr><td>Temple fit</td><td class="num">0.08</td><td>reach and bend placement</td></tr>
+      <tr><td>Weight × grip</td><td class="num">0.06</td><td>heavy frames on a low bridge slide</td></tr>
+      <tr><td>Wrap harmony</td><td class="num">0.05</td><td>frame wrap vs your as-worn face-form angle</td></tr>
+    </table>
+    <p>Scores decay smoothly past each tolerance (an exponential tail), so on small or large
+      faces the ranking still discriminates instead of collapsing to ties. The shape thresholds
+      are <strong>empirical terciles from 77 real portrait scans</strong>, not textbook values —
+      the landmark proxies run wider/taller than classical anthropometry.</p>
+
+    <h2>6 · The learning loop — how the model was trained</h2>
+    <p><strong>Data.</strong> Every scan, recommendation, frame rating, and worn-fit feedback row
+      is stored locally in SQLite with provenance (rules-engine version, landmark model, label
+      author). Ratings snapshot the matcher's own component claims at rating time, so its
+      judgments can be compared against yours even after the algorithm is re-tuned.</p>
+    <p><strong>Features.</strong> The matcher's 8 component scores + fit score, the frame's
+      dimensions/weight and categorical attributes (shape, material, pad type), and your face
+      measurements. <strong>Labels:</strong> your 1–5 match ratings; worn-fit comfort scores.</p>
+    <p><strong>Model.</strong> Gradient-boosted trees
+      (scikit-learn <code>HistGradientBoosting</code>) — chosen for small tabular data with mixed
+      numeric/categorical features and missing values, no tuning required. Evaluation is
+      cross-validated against two no-learning baselines: predicting the mean, and the matcher's
+      own heuristic <code>1&nbsp;+&nbsp;4·fit_score</code>. A model only ships if it beats
+      them.</p>
+    <p><strong>Training run of 2026-07-28</strong> (artifact <code>20260728T003031Z</code>;
+      776 ratings + 365 feedback rows over 176
+      recommendations from the 70-portrait validation set; labels are simulated by a documented
+      synthetic rater marked <code>synthetic-v1</code> — they prove the pipeline and are
+      replaced by your real ratings as they accumulate):</p>
+    <table>
+      <tr><th>Target</th><th>Rows</th><th>Model (CV)</th><th>Baselines</th><th>Verdict</th></tr>
+      <tr><td>match rating (1–5)</td><td class="num">776</td><td class="num">MAE 0.283</td><td class="num">mean 0.473 · heuristic 0.491</td><td>learned the hidden preference ✓</td></tr>
+      <tr><td>temple pressure</td><td class="num">365</td><td class="num">MAE 0.225</td><td class="num">mean 0.945</td><td>strong ✓</td></tr>
+      <tr><td>nose pressure</td><td class="num">365</td><td class="num">MAE 0.325</td><td class="num">mean 0.444</td><td>learned ✓</td></tr>
+      <tr><td>cheek touch</td><td class="num">365</td><td class="num">acc 0.797</td><td class="num">majority 0.860</td><td>label was noise — not shipped</td></tr>
+    </table>
+    <p class="note">The rating model beating the fit-score heuristic is the point of the test:
+      the synthetic rater preferred bridges and certain shapes in ways fit_score cannot see, and
+      the model recovered that signal from data alone. The two failed targets are kept in the
+      table deliberately — baselines exist to prevent fake wins.</p>
+
+    <h2>7 · Validation at scale</h2>
+    <p>The full pipeline was run over <strong>71 public-domain official portraits</strong>
+      (119th U.S. Congress, via Wikimedia Commons) plus MediaPipe's reference portraits:
+      <strong>70/71 scanned successfully</strong> (the one rejection was a genuinely yawed
+      photo — correct behavior), zero crashes, zero implausible-scale flags, ~40&nbsp;ms per
+      face. Measured distributions at an assumed 63&nbsp;mm PD: cheekbone width
+      141&nbsp;±&nbsp;6&nbsp;mm, monocular PDs 30.4&nbsp;±&nbsp;2.2&nbsp;mm — inside adult
+      anthropometric norms. A rotated test image is correctly rejected with coaching.</p>
+
+    <h2>8 · Privacy</h2>
+    <p>The server binds <code>127.0.0.1</code> only. Frames are processed in memory; only
+      derived landmark coordinates and measurements are stored, in one local database file —
+      delete <code>data/runtime/</code> and every trace of your face is gone.</p>
+
+    <p class="note" style="margin-top:2.5rem">GlassFit is a fitting aid, not a medical device.
+      Sources: MediaPipe FaceLandmarker (Google, Apache-2.0) · Source Serif 4 (SIL OFL) ·
+      catalog and thresholds documented in the repository.</p>
+  </main>
+  <footer class="app-footer"><p><a href="/">← back to the scanner</a></p></footer>
+</body>
+</html>
