@@ -75,6 +75,15 @@ h2 { font-size: 1.125rem; font-weight: 600; line-height: 1.25; margin: 0 0 0.35r
 .hint { color: var(--muted); margin: 0.3rem 0 1.3rem; max-width: 62ch; }
 .hint strong { font-weight: 600; }
 
+/* Numbered pre-scan checklist — the three things that make a scan accurate */
+.scan-steps {
+  color: var(--muted); max-width: 68ch;
+  margin: 0.3rem 0 1.3rem; padding-left: 1.4rem;
+}
+.scan-steps li { margin: 0.35rem 0; }
+.scan-steps li::marker { color: var(--green-text); font-weight: 600; }
+.scan-steps strong { font-weight: 600; color: var(--ink); }
+
 /* Numbers used as measurements read in tabular figures */
 .num, td.val, .card dd, .card .big, .match-dims, .match-score, .countdown, .steps li span {
   font-variant-numeric: tabular-nums lining-nums;
@@ -124,7 +133,7 @@ h2 { font-size: 1.125rem; font-weight: 600; line-height: 1.25; margin: 0 0 0.35r
 .hero-sub { color: var(--muted); max-width: 46ch; margin: 0 0 1.3rem; }
 .hero-photo { margin: 0; }
 .hero-photo img {
-  display: block; width: 100%; aspect-ratio: 4 / 5; object-fit: cover;
+  display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover;
   border-radius: var(--radius-card);
 }
 @media (max-width: 720px) {

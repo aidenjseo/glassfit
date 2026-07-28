@@ -173,7 +173,12 @@ function bridgePaths(style, x1, x2, h, sw) {
   const heavy = Math.min(sw, 2.4);
   switch (style) {
     case 'keyhole':
-      return arc(-0.5, -0.8, heavy) + arc(-0.26, 0.08, heavy);
+      // upper arch + a narrower dipped notch — the keyhole silhouette
+      return (
+        arc(-0.55, -0.85, heavy) +
+        `<path d="M ${fx(x1)} ${y(-0.35)} C ${fx(x1 + 0.42 * dblW)} ${y(-0.02)} ` +
+        `${fx(x2 - 0.42 * dblW)} ${y(-0.02)} ${fx(x2)} ${y(-0.35)}" stroke-width="${fx(heavy)}"/>`
+      );
     case 'double':
       return (
         `<path d="M ${fx(x1 - 2)} ${y(-0.8)} L ${fx(x2 + 2)} ${y(-0.8)}" stroke-width="1.4"/>` +
