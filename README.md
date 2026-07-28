@@ -43,7 +43,13 @@ uv run python scripts/download_models.py    # fetch face_landmarker.task (~3 MB,
 uv run glassfit                             # serve on http://127.0.0.1:8000
 ```
 
-Open <http://127.0.0.1:8000>, allow camera access, scan, enter your PD, read your results.
+Open <http://127.0.0.1:8000>, allow camera access, scan (the stage coaches your distance
+live), enter your PD, read your results — then **try frames on virtually**: every match
+card has a *Try on* button that composites the frame **at its true catalog dimensions**
+onto your scan photo (anchored at your pupils, rotated to your head tilt), with a 1–5
+rating that feeds the learning loop. Frames render as parametric SVGs by default; drop
+front-view PNGs into `data/tryon/<frame_id>.png` (kept local; see
+`scripts/fetch_warby_frames.py` for a personal-use fetcher) to use product photos.
 Interactive API docs: <http://127.0.0.1:8000/docs>.
 
 ## Project layout
@@ -70,6 +76,7 @@ All JSON under `/api/v1` (multipart for scan):
 | `GET  /api/v1/frames` | sample frame catalog |
 | `POST /api/v1/frames/match` | ranked shortlist: 8 named fit components (centration, bridge, width, …) |
 | `POST /api/v1/frames/ratings` | rate a suggested frame 1–5 (training labels for the matcher) |
+| `POST /api/v1/scan/probe` | live framing/distance coaching for the camera preview (never stored) |
 | `POST /api/v1/feedback` | log fit feedback (training data) |
 | `GET  /api/v1/health` | liveness + versions |
 

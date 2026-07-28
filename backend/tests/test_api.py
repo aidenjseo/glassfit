@@ -183,3 +183,40 @@ def test_out_of_range_monocular_pd_rejected(client: TestClient) -> None:
     )
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_probe_guidance_bands(make_app, monkeypatch) -> None:
+    import numpy as np
+
+    from glassfit.vision.base import DetectionResult
+
+    class SizedBackend:
+        def __init__(self, frac: float, faces: int = 1):
+            self.frac, self.faces = frac, faces
+
+        def detect(self, bgr):
+            points = np.full((478, 3), 0.5)
+            points[:, 0] = np.linspace(0.5 - self.frac / 2, 0.5 + self.frac / 2, 478)
+            return DetectionResult(
+                landmarks=points if self.faces else np.zeros((0, 3)),
+                face_count=self.faces,
+                image_width=1280,
+                image_height=720,
+                head_pose_deg=(0.0, 0.0, 0.0),
+            )
+
+    def probe(client):
+        resp = client.post("/api/v1/scan/probe", files={"frame": ("f.jpg", b"x", "image/jpeg")})
+        assert resp.status_code == 200, resp.text
+        return resp.json()
+
+    with TestClient(make_app(detector=SizedBackend(0.12))) as client:
+        assert probe(client)["guidance"] == "closer"
+    with TestClient(make_app(detector=SizedBackend(0.30))) as client:
+        body = probe(client)
+        assert body["guidance"] == "ok"
+        assert abs(body["face_width_frac"] - 0.30) < 0.01
+    with TestClient(make_app(detector=SizedBackend(0.55))) as client:
+        assert probe(client)["guidance"] == "back"
+    with TestClient(make_app(detector=SizedBackend(0.3, faces=0))) as client:
+        assert probe(client)["guidance"] == "no_face"

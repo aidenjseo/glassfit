@@ -24,6 +24,7 @@ from glassfit.schemas import (
     LandmarkSet,
     OverlaySegment,
     Point2,
+    ProbeResponse,
     ScanQuality,
     ScanResponse,
     SideViewSummary,
@@ -92,6 +93,44 @@ def _process_side_frames(
         right_frames=counts["right"], left_frames=counts["left"], hinge_to_ear_mm=medians
     )
     return summary, warnings
+
+
+def run_probe(
+    frame_blob: bytes,
+    *,
+    detector: LandmarkBackend,
+    settings: Settings,
+    lock: threading.Lock | None = None,
+) -> ProbeResponse:
+    """One live-preview frame -> distance/framing coaching. Nothing is persisted."""
+    lock = lock or threading.Lock()
+    img = decode_image(frame_blob)
+    with lock:
+        det: DetectionResult = detector.detect(img)
+    if det.face_count == 0 or det.landmarks.size == 0:
+        return ProbeResponse(
+            face_count=det.face_count,
+            guidance="no_face",
+            message="Center your face in the oval",
+        )
+    xs = det.landmarks[:, 0]
+    frac = float(xs.max() - xs.min())
+    yaw, pitch, roll = pose_of(det)
+    if frac < settings.probe_ideal_min_frac:
+        guidance, message = "closer", "Move a little closer"
+    elif frac > settings.probe_ideal_max_frac:
+        guidance, message = "back", "Back up a bit"
+    else:
+        guidance, message = "ok", "Distance good — hold there ✓"
+    return ProbeResponse(
+        face_count=det.face_count,
+        face_width_frac=frac,
+        yaw_deg=yaw,
+        pitch_deg=pitch,
+        roll_deg=roll,
+        guidance=guidance,
+        message=message,
+    )
 
 
 def run_scan(

@@ -50,7 +50,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_error_handlers(app)
     for router_module in (health, scan, measurements, recommendations, frames, feedback):
         app.include_router(router_module.router, prefix="/api/v1")
-    # Mounted LAST so /api/v1/* always wins over the static catch-all.
+    # Optional local try-on art (personal-use product photos; gitignored).
+    if app_settings.tryon_dir.is_dir():
+        app.mount("/tryon", StaticFiles(directory=app_settings.tryon_dir))
+    # Mounted LAST so /api/v1/* and /tryon always win over the static catch-all.
     if app_settings.frontend_dir.is_dir():
         app.mount("/", StaticFiles(directory=app_settings.frontend_dir, html=True))
     return app

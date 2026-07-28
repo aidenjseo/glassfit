@@ -160,6 +160,16 @@ h2 { font-size: 1.125rem; font-weight: 600; line-height: 1.25; margin: 0 0 0.35r
 @keyframes nudge-l { 50% { transform: translateX(-5px); } }
 @keyframes nudge-r { 50% { transform: translateX(5px); } }
 @media (prefers-reduced-motion: reduce) { .chevrons { animation: none !important; } }
+/* Live distance coaching pill (top of the stage) */
+.distance-hint {
+  position: absolute; left: 50%; top: 4.5%; translate: -50% 0;
+  padding: 0.35rem 1rem; border-radius: 4px; white-space: nowrap;
+  background: rgba(18, 18, 18, 0.78); color: #f9f8f5; font-size: 0.9rem;
+  border: 1px solid rgba(249, 248, 245, 0.25);
+}
+.distance-hint[data-state="good"] { border-color: color-mix(in srgb, var(--green) 70%, transparent); color: #d9ecc0; }
+.distance-hint[data-state="warn"] { border-color: rgba(220, 180, 94, 0.6); color: #f2e3bd; }
+
 .countdown {
   position: absolute; inset: 0; display: grid; place-items: center;
   font-size: 5rem; font-weight: 600; color: #f9f8f5;
@@ -300,6 +310,26 @@ table.measures td.unit { color: var(--faint); width: 3.2rem; font-size: 0.82rem;
 .rate-status { font-size: 0.85rem; font-style: italic; }
 .rate-status.good { color: var(--green-text); }
 .rate-status.bad { color: var(--error); }
+
+/* Virtual try-on */
+.tryon-btn {
+  margin-top: 0.6rem; width: 100%;
+  font-size: 0.9rem; padding: 0.45rem 0.9rem;
+}
+.tryon-panel {
+  display: grid; grid-template-columns: minmax(280px, 1.4fr) minmax(220px, 1fr);
+  gap: 1.2rem; align-items: start;
+  border: 1px solid var(--hairline); border-radius: 6px;
+  background: var(--surface); padding: 1rem; margin-bottom: 1.4rem;
+}
+@media (max-width: 640px) { .tryon-panel { grid-template-columns: 1fr; } }
+#tryon-canvas { width: 100%; height: auto; display: block; border-radius: 4px; background: #121212; }
+.tryon-label { font-weight: 600; font-size: 0.9375rem; margin: 0 0 0.35rem; }
+.tryon-label + .tryon-label, .tryon-side .tryon-label:not(:first-child) { margin-top: 1rem; }
+.tryon-picker { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.tryon-chip { font-size: 0.875rem; padding: 0.35rem 0.8rem; }
+.tryon-chip.active { background: var(--green); border-color: var(--green); color: #121212; font-weight: 600; }
+.tryon-note { margin: 0.9rem 0; font-size: 0.85rem; }
 
 /* Feedback frame selector */
 .frame-choice { display: flex; flex-direction: column; gap: 0.25rem; margin-top: 0.4rem; }

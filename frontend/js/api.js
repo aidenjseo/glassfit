@@ -81,6 +81,12 @@ export function postFrameMatch(payload) {
   });
 }
 
+export function postScanProbe(blob) {
+  const form = new FormData();
+  form.append('frame', blob, 'probe.jpg');
+  return request('/scan/probe', { method: 'POST', body: form });
+}
+
 export function postMatchRating(payload) {
   return request('/frames/ratings', {
     method: 'POST',

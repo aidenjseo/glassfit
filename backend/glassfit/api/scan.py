@@ -5,8 +5,8 @@ from typing import Annotated
 from fastapi import APIRouter, File, Request, UploadFile
 
 from glassfit.api.deps import DetectorDep, RepoDep, SettingsDep
-from glassfit.schemas import ScanResponse
-from glassfit.services.scan_service import run_scan
+from glassfit.schemas import ProbeResponse, ScanResponse
+from glassfit.services.scan_service import run_probe, run_scan
 
 router = APIRouter(tags=["scan"])
 
@@ -14,6 +14,21 @@ _SIDE_DESC = (
     "head-turn frames ({} turn). The label is ADVISORY only — the exposed side is "
     "classified geometrically from each frame, so mislabeled bursts still work."
 )
+
+
+@router.post("/scan/probe", response_model=ProbeResponse)
+def scan_probe(
+    request: Request,
+    detector: DetectorDep,
+    settings: SettingsDep,
+    frame: Annotated[UploadFile, File(description="one live-preview frame; never stored")],
+) -> ProbeResponse:
+    return run_probe(
+        frame.file.read(),
+        detector=detector,
+        settings=settings,
+        lock=request.app.state.detector_lock,
+    )
 
 
 @router.post("/scan", response_model=ScanResponse)

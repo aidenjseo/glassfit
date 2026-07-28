@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     models_dir: Path = REPO_ROOT / "data" / "models"
     landmarker_model_path: Path = REPO_ROOT / "data" / "models" / "face_landmarker.task"
     seed_frames_path: Path = REPO_ROOT / "data" / "seed" / "frames.json"
+    # Optional local try-on product art (<frame_id>.png), personal use, never committed
+    tryon_dir: Path = REPO_ROOT / "data" / "tryon"
     rules_path: Path = Path(__file__).resolve().parent / "rules" / "defaults.yaml"
 
     # Debug opt-in ONLY: persist uploaded camera frames to disk (privacy: default off).
@@ -41,6 +43,11 @@ class Settings(BaseSettings):
     # Side-view (head-turn) bursts: must show a genuine turn, but not a full profile
     min_side_yaw_deg: float = 10.0
     max_side_yaw_deg: float = 60.0
+
+    # Live distance-coaching bands (face width / image width). The hard scan gate is
+    # min_face_width_frac; the probe guides users into the comfortable middle.
+    probe_ideal_min_frac: float = 0.20
+    probe_ideal_max_frac: float = 0.45
 
     landmark_model_name: str = "face_landmarker_v2_478"
 

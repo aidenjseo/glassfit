@@ -45,6 +45,18 @@ class OverlaySegment(BaseModel):
     label: str
 
 
+class ProbeResponse(BaseModel):
+    """Lightweight live-preview feedback: is the user framed well for a scan?"""
+
+    face_count: int
+    face_width_frac: float | None = None  # face width / image width
+    yaw_deg: float | None = None
+    pitch_deg: float | None = None
+    roll_deg: float | None = None
+    guidance: str  # "no_face" | "closer" | "back" | "ok"
+    message: str  # human copy for the on-stage hint
+
+
 class ScanResponse(BaseModel):
     scan_id: str
     # Normalized canonical (median-aggregated) set, aligned to the best frame's geometry.

@@ -55,6 +55,7 @@
         <video id="preview" playsinline muted autoplay></video>
         <div class="brackets" aria-hidden="true"></div>
         <div class="guide" aria-hidden="true"><div class="oval"></div></div>
+        <div id="distance-hint" class="distance-hint" hidden></div>
         <div id="phase-bar" class="phase-bar" hidden aria-hidden="true">
           <span class="chevrons left" aria-hidden="true">&#8249;&#8249;&#8249;</span>
           <span id="phase-label"></span>
@@ -154,6 +155,22 @@
       <h1 id="h-results" tabindex="-1">Your fit</h1>
       <div id="results-root"></div>
       <div id="matches-root" aria-label="Catalog frames matching your fit"></div>
+      <div id="tryon-root" hidden>
+        <h2 class="section-title" id="h-tryon">Virtual try-on</h2>
+        <div class="tryon-panel">
+          <canvas id="tryon-canvas"
+                  aria-label="Your scan photo with the selected frame drawn at its true size"></canvas>
+          <div class="tryon-side">
+            <p class="tryon-label">Pick a frame</p>
+            <div id="tryon-picker" class="tryon-picker"></div>
+            <p class="tryon-label">How do these look on you?</p>
+            <div id="tryon-rate"></div>
+            <p class="hint tryon-note">Frames are drawn at their true catalog dimensions on your
+              scan — a 2-D preview, so lens curvature and temples aren&rsquo;t shown.</p>
+            <button id="btn-tryon-close" type="button">Close try-on</button>
+          </div>
+        </div>
+      </div>
       <div class="row">
         <button id="btn-download" type="button">Download JSON</button>
         <button id="btn-feedback" class="primary" type="button">Log fit feedback</button>

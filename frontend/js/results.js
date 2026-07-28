@@ -202,7 +202,7 @@ function componentBreakdown(components) {
   return details;
 }
 
-function ratingControl(match, onRate) {
+export function ratingControl(match, onRate) {
   const wrap = el('div', { class: 'rate-row' });
   wrap.appendChild(el('span', { class: 'rate-label', text: 'Rate this suggestion' }));
   const group = el('div', {
@@ -244,8 +244,9 @@ function ratingControl(match, onRate) {
 }
 
 /** "Frames that fit you" — the ranked catalog shortlist from /frames/match.
- * `onRate(match, rating)` (optional) enables the per-frame rating control. */
-export function renderFrameMatches(root, data, onRate) {
+ * `onRate(match, rating)` (optional) enables the per-frame rating control;
+ * `onTryOn(match)` (optional) adds a "Try on" action per card. */
+export function renderFrameMatches(root, data, onRate, onTryOn) {
   root.textContent = '';
   if (!data.matches.length) {
     root.appendChild(el('p', {
@@ -284,6 +285,11 @@ export function renderFrameMatches(root, data, onRate) {
     }
     if (match.components && Object.keys(match.components).length) {
       cardEl.appendChild(componentBreakdown(match.components));
+    }
+    if (onTryOn) {
+      const tryBtn = el('button', { class: 'tryon-btn', type: 'button', text: 'Try on ↓' });
+      tryBtn.addEventListener('click', () => onTryOn(match));
+      cardEl.appendChild(tryBtn);
     }
     if (onRate) cardEl.appendChild(ratingControl(match, onRate));
     grid.appendChild(cardEl);

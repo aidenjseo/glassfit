@@ -33,7 +33,14 @@ from .recommendation import (
     RuleTrace,
     Temples,
 )
-from .scan import FrameReport, OverlaySegment, ScanQuality, ScanResponse, SideViewSummary
+from .scan import (
+    FrameReport,
+    OverlaySegment,
+    ProbeResponse,
+    ScanQuality,
+    ScanResponse,
+    SideViewSummary,
+)
 
 __all__ = [
     "AdjustmentsMade",
@@ -62,6 +69,7 @@ __all__ = [
     "Optics",
     "OverlaySegment",
     "PerSide",
+    "ProbeResponse",
     "Point2",
     "Point3",
     "Recommendation",

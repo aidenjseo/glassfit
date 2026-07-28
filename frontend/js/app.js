@@ -7,6 +7,7 @@ import {
   postMatchRating,
   postRecommendations,
   postScan,
+  postScanProbe,
 } from './api.js';
 import { Camera } from './camera.js';
 import { $, setError } from './dom.js';
@@ -18,7 +19,8 @@ import {
   initForms,
 } from './forms.js';
 import { drawScanOverlay, renderQualityChips } from './overlay.js';
-import { renderFrameMatches, renderResults } from './results.js';
+import { ratingControl, renderFrameMatches, renderResults } from './results.js';
+import { drawTryOn } from './tryon.js';
 
 // bestFrameBlob: the one captured frame kept after upload (for the review overlay) —
 // the raw bursts (~1-2 MB of JPEGs) are released as soon as the scan succeeds.
@@ -29,10 +31,14 @@ const session = {
   bestFrameBlob: null,
   scan: null,
   analysis: null,
+  matches: [],
+  onRate: null, // the rating poster bound to the current recommendation
+  tryOnBitmap: null,
   matchSeq: 0,
 };
 const camera = new Camera($('preview'));
 camera.onLost = () => {
+  stopProbe();
   $('btn-scan').disabled = true;
   $('btn-start').hidden = false;
   showCameraError(
@@ -40,6 +46,40 @@ camera.onLost = () => {
     'The camera turned off — it may be in use elsewhere or its permission was revoked. Start it again when ready.'
   );
 };
+
+// ---- live distance coaching -------------------------------------------------
+// While the camera previews, a frame is probed every ~900ms so the stage can say
+// "move closer" / "back up" BEFORE the user burns a scan attempt. Probe frames
+// are analyzed in memory server-side and never stored.
+let probeTimer = null;
+let scanning = false;
+
+function stopProbe() {
+  if (probeTimer) {
+    clearInterval(probeTimer);
+    probeTimer = null;
+  }
+  $('distance-hint').hidden = true;
+}
+
+function startProbe() {
+  stopProbe();
+  probeTimer = setInterval(async () => {
+    if (scanning || !camera.ready) return;
+    try {
+      const blobs = await camera.captureFrames(1, 0);
+      if (scanning || !camera.ready || !blobs.length) return;
+      const probe = await postScanProbe(blobs[0]);
+      if (scanning || probeTimer === null) return; // superseded while awaiting
+      const hint = $('distance-hint');
+      hint.textContent = probe.message;
+      hint.dataset.state = probe.guidance === 'ok' ? 'good' : 'warn';
+      hint.hidden = false;
+    } catch {
+      $('distance-hint').hidden = true; // probe is advisory; never block the flow
+    }
+  }, 900);
+}
 
 // The guided capture choreography: frontal burst, then two head turns whose side
 // views let the backend measure hinge-to-ear geometry far better than a frontal
@@ -106,6 +146,7 @@ async function startCamera() {
     $('stage-hero').hidden = true;
     $('btn-scan').disabled = false;
     $('btn-start').hidden = true;
+    startProbe();
     announce('Camera ready. Center your face in the oval, then press Begin scan.');
   } catch (err) {
     showCameraError('Camera unavailable', err.message);
@@ -163,6 +204,8 @@ async function runScan() {
   }
   $('scan-error').hidden = true;
   $('btn-scan').disabled = true;
+  scanning = true; // pause the distance probe for the whole choreography
+  $('distance-hint').hidden = true;
   try {
     resetPoseStrip();
     await countdown();
@@ -181,6 +224,7 @@ async function runScan() {
     // keep only the frame the overlay needs; release the rest of the JPEG bursts
     session.bestFrameBlob = session.bursts.front[scan.best_frame_index];
     session.bursts = { front: [], left: [], right: [] };
+    stopProbe();
     camera.stop();
     $('btn-start').hidden = false;
     setStep('review');
@@ -194,6 +238,7 @@ async function runScan() {
     hidePhase();
     showScanError(err);
   } finally {
+    scanning = false;
     $('btn-scan').disabled = !camera.ready;
   }
 }
@@ -202,8 +247,13 @@ function backToCamera() {
   session.scan = null;
   session.bestFrameBlob = null;
   session.bursts = { front: [], left: [], right: [] };
+  session.matches = [];
+  session.onRate = null;
+  session.tryOnBitmap?.close();
+  session.tryOnBitmap = null;
   session.matchSeq += 1; // orphan any in-flight match fetch
   $('matches-root').textContent = '';
+  $('tryon-root').hidden = true;
   $('feedback-form').reset(); // stale answers must never ride into a new session
   buildFrameChoice([]);
   resetPoseStrip();
@@ -254,11 +304,54 @@ async function loadFrameMatches(recommendationId) {
         fit_score: match.fit_score,
         components: match.components,
       });
-    renderFrameMatches(container, data, onRate);
+    session.matches = data.matches;
+    session.onRate = onRate;
+    renderFrameMatches(container, data, onRate, openTryOn);
     buildFrameChoice(data.matches);
   } catch {
     // the shortlist is an extra — the measurements/recommendation above stand alone
   }
+}
+
+// ---- virtual try-on ---------------------------------------------------------
+async function openTryOn(match) {
+  if (!session.bestFrameBlob || !session.analysis || !session.scan) return;
+  try {
+    session.tryOnBitmap ??= await createImageBitmap(session.bestFrameBlob);
+    $('tryon-root').hidden = false;
+    renderTryOnPicker(match.frame.frame_id);
+    mountTryOnRating(match);
+    await drawTryOn(
+      $('tryon-canvas'),
+      session.tryOnBitmap,
+      session.scan,
+      session.analysis,
+      match.frame
+    );
+    announce(`Trying on ${match.frame.name} — drawn at its true size on your scan.`);
+    $('h-tryon').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch {
+    $('tryon-root').hidden = true;
+  }
+}
+
+function renderTryOnPicker(activeId) {
+  const picker = $('tryon-picker');
+  picker.textContent = '';
+  for (const match of session.matches) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = `tryon-chip${match.frame.frame_id === activeId ? ' active' : ''}`;
+    chip.textContent = match.frame.name;
+    chip.addEventListener('click', () => openTryOn(match));
+    picker.appendChild(chip);
+  }
+}
+
+function mountTryOnRating(match) {
+  const mount = $('tryon-rate');
+  mount.textContent = '';
+  if (session.onRate) mount.appendChild(ratingControl(match, session.onRate));
 }
 
 function downloadJson() {
@@ -306,6 +399,9 @@ function wire() {
   $('feedback-form').addEventListener('submit', submitFeedback);
   $('btn-rescan-results').addEventListener('click', backToCamera);
   $('btn-rescan-done').addEventListener('click', backToCamera);
+  $('btn-tryon-close').addEventListener('click', () => {
+    $('tryon-root').hidden = true;
+  });
 
   getHealth()
     .then((health) => {
