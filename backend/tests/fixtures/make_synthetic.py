@@ -111,6 +111,9 @@ def _expected(pd: float, zygoma: float, temple: float) -> dict:
         "ear_height_asymmetry_mm": 0.0,
         "face_wrap_radius_mm": wrap_radius,
         "behind_ear_drop_mm": 0.4 * (60.0 - 25.0),
+        # forehead (0,-55,10) -> chin (0,85,5); jaw 58<->288 at (±48,60,40)
+        "face_length_mm": math.hypot(140.0, 5.0),
+        "jaw_width_mm": 96.0,
     }
 
 

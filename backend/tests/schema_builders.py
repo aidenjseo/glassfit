@@ -36,6 +36,8 @@ def sample_measurements(**overrides) -> FaceMeasurements:
         bridge_crest_height_mm=8.0,
         zygoma_width_mm=132.0,
         temple_width_mm=138.0,
+        face_length_mm=142.0,
+        jaw_width_mm=98.0,
         face_wrap_radius_mm=95.0,
         cheek_clearance_mm=side(6.0, 5.5),
         hinge_to_ear_mm=side(98.0, 99.0),

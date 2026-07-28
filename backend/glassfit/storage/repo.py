@@ -17,6 +17,7 @@ from glassfit.schemas import (
     FaceMeasurements,
     FeedbackIn,
     LandmarkSet,
+    MatchRatingIn,
     Recommendation,
     ScanQuality,
 )
@@ -203,6 +204,59 @@ class Repo:
             )
         self._checkpoint()
         return feedback_id
+
+    # --- match ratings -----------------------------------------------------------------------
+
+    def save_match_rating(self, rating: MatchRatingIn) -> str:
+        """Persist a per-frame match rating; returns the new rating id.
+
+        Raises NotFound when the referenced recommendation or catalog frame is unknown.
+        """
+        with self._write_lock, self._conn:
+            if (
+                self._conn.execute(
+                    "SELECT 1 FROM recommendations WHERE id = ?", (rating.recommendation_id,)
+                ).fetchone()
+                is None
+            ):
+                raise NotFound(
+                    f"recommendation {rating.recommendation_id!r} not found",
+                    {"recommendation_id": rating.recommendation_id},
+                )
+            if (
+                self._conn.execute(
+                    "SELECT 1 FROM frames WHERE frame_id = ?", (rating.frame_id,)
+                ).fetchone()
+                is None
+            ):
+                raise NotFound(
+                    f"frame {rating.frame_id!r} not found", {"frame_id": rating.frame_id}
+                )
+            # Upsert: re-rating the same (recommendation, frame, user) replaces the
+            # previous label — latest opinion wins; RETURNING yields the surviving id.
+            row = self._conn.execute(
+                "INSERT INTO match_ratings (id, recommendation_id, frame_id, created_at,"
+                " user_id, rating, fit_score, components_json, comment)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(recommendation_id, frame_id, user_id) DO UPDATE SET"
+                " rating = excluded.rating, fit_score = excluded.fit_score,"
+                " components_json = excluded.components_json, comment = excluded.comment,"
+                " created_at = excluded.created_at"
+                " RETURNING id",
+                (
+                    str(uuid.uuid4()),
+                    rating.recommendation_id,
+                    rating.frame_id,
+                    _now_iso(),
+                    rating.user_id,
+                    rating.rating,
+                    rating.fit_score,
+                    json.dumps(rating.components) if rating.components is not None else None,
+                    rating.comment,
+                ),
+            ).fetchone()
+        self._checkpoint()
+        return row["id"]
 
     # --- frames ------------------------------------------------------------------------------
 

@@ -104,3 +104,56 @@ def test_recommendation_without_feedback_kept(db_path: Path) -> None:
     frame = load_training_frame(db_path)
     assert len(frame) == 2
     assert set(frame["has_feedback"]) == {True, False}
+
+
+def test_match_ratings_export(db_path: Path, tmp_path: Path) -> None:
+    from glassfit.schemas import CatalogFrame, MatchRatingIn
+    from glassfit_training.dataset import export as export_table
+    from glassfit_training.dataset import load_match_ratings_frame
+
+    conn = connect(db_path)
+    repo = Repo(conn)
+    repo.upsert_frames(
+        [
+            CatalogFrame(
+                frame_id="GF-T1",
+                name="Trainer",
+                shape="rectangle",
+                material="acetate",
+                rim="full",
+                a_mm=52.0,
+                b_mm=38.0,
+                dbl_mm=18.0,
+                ed_mm=55.0,
+                temple_mm=145.0,
+                weight_g=22.0,
+                bridge_style="keyhole",
+                nose_pads="fixed_acetate",
+                tags=["test"],
+            )
+        ]
+    )
+    repo.save_match_rating(
+        MatchRatingIn(
+            recommendation_id="rec1",
+            frame_id="GF-T1",
+            rating=4,
+            fit_score=0.81,
+            components={"bridge_fit": 0.92, "shape_affinity": 0.7},
+        )
+    )
+    conn.close()
+
+    frame = load_match_ratings_frame(db_path)
+    assert len(frame) == 1
+    row = frame.iloc[0]
+    assert row["rating"] == 4
+    assert row["fit_score"] == 0.81
+    assert row["comp_bridge_fit"] == 0.92
+    assert row["m_zygoma_width_mm"] == 132.0  # measurements joined in as features
+    assert row["frame_a_mm"] == 52.0
+    assert row["engine_version"] == "rules-1.0.0"
+
+    out = export_table(db_path, tmp_path / "exports" / "ratings.csv", table="ratings")
+    assert out.exists()
+    assert "comp_bridge_fit" in pd.read_csv(out).columns

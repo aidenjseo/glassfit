@@ -49,6 +49,8 @@ def make_measurements(
         bridge_crest_height_mm=crest_mm,
         zygoma_width_mm=zygoma_mm,
         temple_width_mm=temple_width_mm,
+        face_length_mm=zygoma_mm * 1.08,
+        jaw_width_mm=zygoma_mm * 0.74,
         face_wrap_radius_mm=wrap_radius_mm,
         cheek_clearance_mm=PerSide(right=8.0, left=8.0),
         hinge_to_ear_mm=PerSide(right=hinge_right_mm, left=hinge_left_mm),

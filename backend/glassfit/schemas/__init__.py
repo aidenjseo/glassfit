@@ -8,6 +8,8 @@ from .frames import (
     FrameMatch,
     FrameMatchRequest,
     FrameMatchResponse,
+    MatchRatingIn,
+    MatchRatingOut,
 )
 from .measurements import (
     BehindEar,
@@ -52,6 +54,8 @@ __all__ = [
     "ImageSize",
     "LandmarkSet",
     "LensIntent",
+    "MatchRatingIn",
+    "MatchRatingOut",
     "MeasurementQuality",
     "MeasurementRequest",
     "NosePads",

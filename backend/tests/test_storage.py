@@ -16,6 +16,7 @@ from glassfit.schemas import (
     FrameDims,
     FrameReport,
     LandmarkSet,
+    MatchRatingIn,
     ScanQuality,
 )
 from glassfit.storage.db import connect
@@ -109,12 +110,12 @@ def test_connect_creates_schema_and_sets_user_version(tmp_path: Path) -> None:
     c = connect(db_path)
     try:
         assert db_path.exists()
-        assert c.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert c.execute("PRAGMA user_version").fetchone()[0] == 3
         assert c.execute("PRAGMA foreign_keys").fetchone()[0] == 1
         tables = {
             r["name"] for r in c.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
         }
-        assert {"scans", "recommendations", "frames", "feedback"} <= tables
+        assert {"scans", "recommendations", "frames", "feedback", "match_ratings"} <= tables
     finally:
         c.close()
 
@@ -319,3 +320,106 @@ def test_check_constraints_enforced(
     _save_recommendation(repo, scan_id=None, rec_id="rec-1")
     with pytest.raises(sqlite3.IntegrityError):
         _raw_feedback_insert(conn, **overrides)
+
+
+# --- schema v2: match ratings ----------------------------------------------------------------
+
+
+def test_fresh_db_is_at_current_schema_with_match_ratings(conn: sqlite3.Connection) -> None:
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 3
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert "match_ratings" in tables
+
+
+def test_v1_db_upgrades_in_place_preserving_data(tmp_path: Path) -> None:
+    path = tmp_path / "upgrade.db"
+    conn = connect(path)
+    repo = Repo(conn)
+    _save_recommendation(repo, scan_id=None, rec_id="rec-old")
+    # simulate a database created before migration v2 shipped
+    conn.execute("DROP TABLE match_ratings")
+    conn.execute("PRAGMA user_version = 1")
+    conn.commit()
+    conn.close()
+
+    upgraded = connect(path)
+    assert upgraded.execute("PRAGMA user_version").fetchone()[0] == 3
+    assert upgraded.execute("SELECT COUNT(*) FROM recommendations").fetchone()[0] == 1
+    Repo(upgraded).save_match_rating(
+        MatchRatingIn(recommendation_id="rec-old", frame_id=_seed_frame(upgraded), rating=5)
+    )
+    assert upgraded.execute("SELECT COUNT(*) FROM match_ratings").fetchone()[0] == 1
+    upgraded.close()
+
+
+def _seed_frame(conn: sqlite3.Connection) -> str:
+    Repo(conn).upsert_frames([_catalog_frame()])
+    return "TEST-01"
+
+
+def test_match_rating_round_trip_and_not_found(repo: Repo, conn: sqlite3.Connection) -> None:
+    _save_recommendation(repo, scan_id=None, rec_id="rec-1")
+    repo.upsert_frames([_catalog_frame()])
+    rating_id = repo.save_match_rating(
+        MatchRatingIn(
+            recommendation_id="rec-1",
+            frame_id="TEST-01",
+            rating=4,
+            fit_score=0.82,
+            components={"bridge_fit": 0.9, "shape_affinity": 0.7},
+            comment="nice",
+        )
+    )
+    row = conn.execute("SELECT * FROM match_ratings WHERE id = ?", (rating_id,)).fetchone()
+    assert row["rating"] == 4
+    assert row["fit_score"] == 0.82
+    assert json.loads(row["components_json"]) == {"bridge_fit": 0.9, "shape_affinity": 0.7}
+
+    with pytest.raises(NotFound):
+        repo.save_match_rating(
+            MatchRatingIn(recommendation_id="ghost", frame_id="TEST-01", rating=3)
+        )
+    with pytest.raises(NotFound):
+        repo.save_match_rating(
+            MatchRatingIn(recommendation_id="rec-1", frame_id="GHOST-99", rating=3)
+        )
+
+
+def test_match_rating_upserts_latest_wins(repo: Repo, conn: sqlite3.Connection) -> None:
+    _save_recommendation(repo, scan_id=None, rec_id="rec-1")
+    repo.upsert_frames([_catalog_frame()])
+    first = repo.save_match_rating(
+        MatchRatingIn(recommendation_id="rec-1", frame_id="TEST-01", rating=2)
+    )
+    second = repo.save_match_rating(
+        MatchRatingIn(recommendation_id="rec-1", frame_id="TEST-01", rating=5, comment="better")
+    )
+    assert second == first  # the surviving row keeps its identity
+    rows = conn.execute("SELECT rating, comment FROM match_ratings").fetchall()
+    assert len(rows) == 1
+    assert rows[0]["rating"] == 5 and rows[0]["comment"] == "better"
+
+
+def test_v2_dup_ratings_deduped_by_v3_migration(tmp_path: Path) -> None:
+    path = tmp_path / "dups.db"
+    conn = connect(path)
+    repo = Repo(conn)
+    _save_recommendation(repo, scan_id=None, rec_id="rec-1")
+    repo.upsert_frames([_catalog_frame()])
+    # simulate a v2 database that accumulated duplicate rows before uniqueness shipped
+    conn.execute("DROP INDEX uq_match_ratings_pair")
+    conn.execute("PRAGMA user_version = 2")
+    for i, rating in enumerate([2, 4]):
+        conn.execute(
+            "INSERT INTO match_ratings (id, recommendation_id, frame_id, created_at,"
+            " user_id, rating) VALUES (?, 'rec-1', 'TEST-01', ?, 'local', ?)",
+            (f"r-{i}", f"2026-01-0{i + 1}T00:00:00+00:00", rating),
+        )
+    conn.commit()
+    conn.close()
+
+    upgraded = connect(path)
+    rows = upgraded.execute("SELECT rating FROM match_ratings").fetchall()
+    assert len(rows) == 1
+    assert rows[0]["rating"] == 4  # the later row survived
+    upgraded.close()

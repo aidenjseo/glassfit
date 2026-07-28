@@ -51,7 +51,8 @@ class FrameMatchRequest(BaseModel):
 
 class FrameMatch(BaseModel):
     frame: CatalogFrame
-    fit_score: float = Field(ge=0.0, le=1.0)  # 1.0 = perfect dimensional match
+    fit_score: float = Field(ge=0.0, le=1.0)  # weighted sum of the named components
+    components: dict[str, float] = {}  # per-component 0..1 scores (explainable + ML features)
     deltas: dict[str, float]  # frame minus target, mm, keyed by FrameDims field
     flags: list[str] = []  # human-readable fit caveats/positives
 
@@ -59,3 +60,24 @@ class FrameMatch(BaseModel):
 class FrameMatchResponse(BaseModel):
     targets: FrameDims
     matches: list[FrameMatch]  # best first; hard-filtered frames are absent
+
+
+class MatchRatingIn(BaseModel):
+    """A user's rating of one suggested frame match — Phase-3 training labels.
+
+    ``fit_score``/``components`` snapshot what the matcher claimed at rating time
+    (client-side echo), so the learning loop can compare its components against
+    human judgment even after the algorithm's tunables change.
+    """
+
+    recommendation_id: str
+    frame_id: str
+    rating: int = Field(ge=1, le=5)  # 1 = bad suggestion, 5 = great suggestion
+    fit_score: float | None = Field(None, ge=0.0, le=1.0)
+    components: dict[str, float] | None = None
+    comment: str | None = None
+    user_id: str = "local"
+
+
+class MatchRatingOut(BaseModel):
+    rating_id: str

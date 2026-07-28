@@ -70,8 +70,10 @@ __all__ = [
     "cheek_clearance_mm",
     "compute_measurements",
     "ear_height_asymmetry_mm",
+    "face_length_mm",
     "face_wrap_radius_mm",
     "hinge_to_ear_mm",
+    "jaw_width_mm",
     "monocular_pd_mm",
     "pupil_height_ratio",
     "temple_width_mm",
@@ -166,6 +168,16 @@ def zygoma_width_mm(mm: np.ndarray) -> float:
 def temple_width_mm(mm: np.ndarray) -> float:
     """Temple-to-temple width: 3-D distance 127 <-> 356 (symmetric, side-agnostic)."""
     return dist(mm[idx.TEMPLE_RIGHT], mm[idx.TEMPLE_LEFT])
+
+
+def face_length_mm(mm: np.ndarray) -> float:
+    """Face length: forehead-top (10) to chin (152) — proportion input for shape matching."""
+    return dist(mm[idx.FOREHEAD_TOP], mm[idx.CHIN])
+
+
+def jaw_width_mm(mm: np.ndarray) -> float:
+    """Bigonial jaw width: 58 <-> 288 (symmetric, side-agnostic)."""
+    return dist(mm[idx.JAW_RIGHT[0]], mm[idx.JAW_LEFT[0]])
 
 
 def face_wrap_radius_mm(mm: np.ndarray) -> float:
@@ -294,6 +306,8 @@ def compute_measurements(landmarks: LandmarkSet, pd_mm: float) -> FaceMeasuremen
         bridge_crest_height_mm=bridge_crest_height_mm(mm, sides),
         zygoma_width_mm=zygoma,
         temple_width_mm=temple_width_mm(mm),
+        face_length_mm=face_length_mm(mm),
+        jaw_width_mm=jaw_width_mm(mm),
         face_wrap_radius_mm=face_wrap_radius_mm(mm),
         cheek_clearance_mm=cheek_clearance_mm(mm, sides),
         hinge_to_ear_mm=hinge_to_ear_mm(mm, sides),

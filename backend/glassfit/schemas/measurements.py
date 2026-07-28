@@ -55,6 +55,8 @@ class FaceMeasurements(BaseModel):
     bridge_crest_height_mm: float
     zygoma_width_mm: float
     temple_width_mm: float
+    face_length_mm: float  # forehead-top (10) to chin (152) — drives shape affinity
+    jaw_width_mm: float  # gonion-to-gonion (58<->288) — drives shape affinity
     face_wrap_radius_mm: float
     cheek_clearance_mm: PerSide
     hinge_to_ear_mm: PerSide  # ESTIMATE — mesh has no ear landmarks (low confidence)

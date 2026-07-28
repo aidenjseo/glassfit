@@ -48,6 +48,37 @@ LEFT JOIN feedback f ON f.recommendation_id = r.id
 ORDER BY r.created_at, f.created_at
 """
 
+_RATINGS_SQL = """
+SELECT
+    mr.id              AS rating_id,
+    mr.recommendation_id,
+    mr.frame_id,
+    mr.created_at      AS rated_at,
+    mr.user_id         AS user_id,
+    mr.rating          AS rating,
+    mr.fit_score       AS fit_score,
+    mr.components_json,
+    mr.comment         AS comment,
+    r.measurements_json,
+    r.engine_version   AS engine_version,
+    r.pd_mm            AS pd_mm,
+    f.a_mm             AS frame_a_mm,
+    f.b_mm             AS frame_b_mm,
+    f.dbl_mm           AS frame_dbl_mm,
+    f.ed_mm            AS frame_ed_mm,
+    f.temple_mm        AS frame_temple_mm,
+    f.weight_g         AS frame_weight_g,
+    f.shape            AS frame_shape,
+    f.material         AS frame_material,
+    f.nose_pads        AS frame_nose_pads,
+    f.low_bridge_fit   AS frame_low_bridge_fit,
+    f.spring_hinge     AS frame_spring_hinge
+FROM match_ratings mr
+JOIN recommendations r ON r.id = mr.recommendation_id
+JOIN frames f          ON f.frame_id = mr.frame_id
+ORDER BY mr.created_at
+"""
+
 _SKIP_KEYS = {"rule_trace", "notes"}
 
 
@@ -117,9 +148,43 @@ def load_training_frame(db_path: Path):
     return pd.DataFrame(records)
 
 
-def export(db_path: Path, out_path: Path, fmt: str = "csv") -> Path:
-    """Write the training table to ``out_path`` (csv or parquet); returns the path."""
-    frame = load_training_frame(db_path)
+def load_match_ratings_frame(db_path: Path):
+    """Frame-match ratings joined with measurements + frame attributes.
+
+    The learning table for the MATCHING algorithm: features = flattened
+    measurements (``m_*``), catalog-frame attributes (``frame_*``), and the
+    matcher's component snapshot at rating time (``comp_*``); label = ``rating``.
+    """
+    pd = _require_pandas()
+    if not Path(db_path).exists():
+        raise SystemExit(f"database not found: {db_path} — run the app and rate matches first")
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(_RATINGS_SQL).fetchall()
+    finally:
+        conn.close()
+
+    records: list[dict[str, Any]] = []
+    for row in rows:
+        rec = {
+            key: row[key]
+            for key in row.keys()  # noqa: SIM118 - sqlite3.Row has no __iter__ over keys
+            if key not in ("measurements_json", "components_json")
+        }
+        _flatten("m", json.loads(row["measurements_json"]), rec)
+        if row["components_json"]:
+            _flatten("comp", json.loads(row["components_json"]), rec)
+        records.append(rec)
+    return pd.DataFrame(records)
+
+
+_LOADERS = {"feedback": load_training_frame, "ratings": load_match_ratings_frame}
+
+
+def export(db_path: Path, out_path: Path, fmt: str = "csv", table: str = "feedback") -> Path:
+    """Write a training table to ``out_path`` (csv or parquet); returns the path."""
+    frame = _LOADERS[table](db_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     if fmt == "parquet":
         try:
@@ -137,10 +202,16 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(prog="glassfit_training.dataset")
     sub = parser.add_subparsers(dest="command", required=True)
-    exp = sub.add_parser("export", help="export the joined training table")
+    exp = sub.add_parser("export", help="export a joined training table")
     exp.add_argument("--db", type=Path, default=get_settings().db_path)
     exp.add_argument("--out", type=Path, default=None)
     exp.add_argument("--fmt", choices=["csv", "parquet"], default="csv")
+    exp.add_argument(
+        "--table",
+        choices=sorted(_LOADERS),
+        default="feedback",
+        help="feedback = worn-fit comfort labels; ratings = frame-match ratings",
+    )
     args = parser.parse_args()
 
     out = args.out
@@ -148,8 +219,8 @@ def main() -> None:
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         from glassfit.config import REPO_ROOT
 
-        out = REPO_ROOT / "data" / "exports" / f"training_{stamp}.{args.fmt}"
-    written = export(args.db, out, args.fmt)
+        out = REPO_ROOT / "data" / "exports" / f"training_{args.table}_{stamp}.{args.fmt}"
+    written = export(args.db, out, args.fmt, table=args.table)
     print(f"wrote {written}")
 
 

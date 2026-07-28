@@ -1,12 +1,18 @@
-"""Frame catalog endpoints: listing + Phase-2 ranked fit matching."""
+"""Frame catalog endpoints: listing, Phase-2 ranked fit matching, match ratings."""
 
 from fastapi import APIRouter
 
 from glassfit.api.deps import RepoDep, SettingsDep
-from glassfit.catalog.match import match_frames
+from glassfit.catalog.match import MatchContext, match_frames
 from glassfit.errors import NotFound
 from glassfit.rules.params import load_rule_params
-from glassfit.schemas import FrameListResponse, FrameMatchRequest, FrameMatchResponse
+from glassfit.schemas import (
+    FrameListResponse,
+    FrameMatchRequest,
+    FrameMatchResponse,
+    MatchRatingIn,
+    MatchRatingOut,
+)
 
 router = APIRouter(tags=["frames"])
 
@@ -32,7 +38,6 @@ def list_frames(
 def frames_match(
     req: FrameMatchRequest, repo: RepoDep, settings: SettingsDep
 ) -> FrameMatchResponse:
-    prefer_low_bridge = False
     if req.recommendation_id is not None:
         stored = repo.get_recommendation(req.recommendation_id)
         if stored is None:
@@ -40,17 +45,22 @@ def frames_match(
                 f"recommendation {req.recommendation_id!r} not found",
                 details={"recommendation_id": req.recommendation_id},
             )
-        targets = stored["recommendation"].frame
-        crest = stored["measurements"].bridge_crest_height_mm
+        rec = stored["recommendation"]
+        measurements = stored["measurements"]
         low_crest = load_rule_params(settings.rules_path).nose_pads.low_crest_adjustable_mm
-        prefer_low_bridge = crest < low_crest
+        ctx = MatchContext(
+            targets=rec.frame,
+            measurements=measurements,
+            face_form_target_deg=rec.as_worn.face_form_deg,
+            prefer_low_bridge=measurements.bridge_crest_height_mm < low_crest,
+        )
     else:
         assert req.targets is not None  # guaranteed by the request validator
-        targets = req.targets
-    matches = match_frames(
-        repo.list_frames(limit=1000),
-        targets,
-        prefer_low_bridge=prefer_low_bridge,
-        limit=req.limit,
-    )
-    return FrameMatchResponse(targets=targets, matches=matches)
+        ctx = MatchContext(targets=req.targets)
+    matches = match_frames(repo.list_frames(limit=1000), ctx, limit=req.limit)
+    return FrameMatchResponse(targets=ctx.targets, matches=matches)
+
+
+@router.post("/frames/ratings", response_model=MatchRatingOut, status_code=201)
+def rate_match(rating: MatchRatingIn, repo: RepoDep) -> MatchRatingOut:
+    return MatchRatingOut(rating_id=repo.save_match_rating(rating))
