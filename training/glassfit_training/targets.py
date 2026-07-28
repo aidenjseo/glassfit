@@ -1,17 +1,31 @@
-"""Phase 3 stub — training targets for the residual model.
+"""Training targets.
 
-- Regression: ``adj_*`` adjustment deltas (what a fitter actually changed vs the rules
-  output) — one HistGradientBoostingRegressor per target.
-- Classification: ``slips``, ``cheek_touch`` — HistGradientBoostingClassifier.
-- Ordinal-as-regression: ``nose_pressure``, ``temple_pressure`` (1-5).
-
-Serving-time correction: ``final = rules_output + clamp(residual_prediction)`` with
-clamps keeping every corrected value inside rule-safe bands (e.g. pantoscopic 3-10°).
+- Ratings model: ``rating`` (1-5) as a regression target — ordinal, and MAE in
+  rating points is the honest metric.
+- Comfort models: ``nose_pressure``/``temple_pressure`` (1-5 regressors) and
+  ``slips`` (binary classifier). Adjustment deltas (``adj_*``) become residual
+  regression targets once enough non-null rows exist.
 """
 
 from typing import Any
 
+COMFORT_REGRESSION = ("nose_pressure", "temple_pressure")
+COMFORT_BINARY = ("slips", "cheek_touch")
 
-def build_targets(frame: Any) -> Any:
-    """DataFrame -> {target_name: y}. Not implemented until Phase 3."""
-    raise NotImplementedError("Phase 3")
+
+def rating_target(frame: Any):
+    return frame["rating"].astype(float)
+
+
+def comfort_targets(labeled: Any) -> dict[str, Any]:
+    """Available comfort targets from an already-label-filtered feedback frame."""
+    targets: dict[str, Any] = {}
+    for name in COMFORT_REGRESSION:
+        series = labeled[name].dropna().astype(float)
+        if len(series):
+            targets[name] = series
+    for name in COMFORT_BINARY:
+        series = labeled[name].dropna().astype(int)
+        if series.nunique() > 1:  # a classifier needs both classes present
+            targets[name] = series
+    return targets

@@ -107,32 +107,15 @@ def test_recommendation_without_feedback_kept(db_path: Path) -> None:
 
 
 def test_match_ratings_export(db_path: Path, tmp_path: Path) -> None:
-    from glassfit.schemas import CatalogFrame, MatchRatingIn
+    from schema_builders import sample_frame
+
+    from glassfit.schemas import MatchRatingIn
     from glassfit_training.dataset import export as export_table
     from glassfit_training.dataset import load_match_ratings_frame
 
     conn = connect(db_path)
     repo = Repo(conn)
-    repo.upsert_frames(
-        [
-            CatalogFrame(
-                frame_id="GF-T1",
-                name="Trainer",
-                shape="rectangle",
-                material="acetate",
-                rim="full",
-                a_mm=52.0,
-                b_mm=38.0,
-                dbl_mm=18.0,
-                ed_mm=55.0,
-                temple_mm=145.0,
-                weight_g=22.0,
-                bridge_style="keyhole",
-                nose_pads="fixed_acetate",
-                tags=["test"],
-            )
-        ]
-    )
+    repo.upsert_frames([sample_frame(frame_id="GF-T1", name="Trainer", tags=["test"])])
     repo.save_match_rating(
         MatchRatingIn(
             recommendation_id="rec1",
