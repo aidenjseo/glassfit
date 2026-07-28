@@ -220,3 +220,22 @@ def test_probe_guidance_bands(make_app, monkeypatch) -> None:
         assert probe(client)["guidance"] == "back"
     with TestClient(make_app(detector=SizedBackend(0.3, faces=0))) as client:
         assert probe(client)["guidance"] == "no_face"
+
+
+def test_track_returns_pupil_anchors(client: TestClient) -> None:
+    resp = client.post("/api/v1/scan/track", files={"frame": ("f.jpg", b"x", "image/jpeg")})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["ok"] is True
+    # fixture pupils: subject-right at smaller x, both in sent-frame pixels
+    assert body["pupil_right"][0] < body["pupil_left"][0]
+    assert 0 < body["pupil_right"][0] < body["image_width"]
+
+
+def test_track_reports_not_ok_without_a_face(make_app) -> None:
+    with TestClient(make_app(detector=FakeBackend(face_count=0))) as client:
+        resp = client.post("/api/v1/scan/track", files={"frame": ("f.jpg", b"x", "image/jpeg")})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is False
+    assert body["pupil_right"] is None

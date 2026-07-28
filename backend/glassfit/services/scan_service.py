@@ -28,6 +28,7 @@ from glassfit.schemas import (
     ScanQuality,
     ScanResponse,
     SideViewSummary,
+    TrackResponse,
 )
 from glassfit.storage.repo import Repo
 from glassfit.vision.aggregate import aggregate_landmarks
@@ -130,6 +131,31 @@ def run_probe(
         roll_deg=roll,
         guidance=guidance,
         message=message,
+    )
+
+
+def run_track(
+    frame_blob: bytes,
+    *,
+    detector: LandmarkBackend,
+    lock: threading.Lock | None = None,
+) -> TrackResponse:
+    """One live frame -> pupil anchors for the live try-on. Nothing is persisted."""
+    lock = lock or threading.Lock()
+    img = decode_image(frame_blob)
+    with lock:
+        det: DetectionResult = detector.detect(img)
+    if det.face_count != 1 or det.landmarks.size == 0 or len(det.landmarks) < 478:
+        return TrackResponse(ok=False)
+    sides = resolve_sides(det.landmarks)
+    right = det.landmarks[sides.right.iris_center]
+    left = det.landmarks[sides.left.iris_center]
+    return TrackResponse(
+        ok=True,
+        image_width=det.image_width,
+        image_height=det.image_height,
+        pupil_right=(float(right[0] * det.image_width), float(right[1] * det.image_height)),
+        pupil_left=(float(left[0] * det.image_width), float(left[1] * det.image_height)),
     )
 
 

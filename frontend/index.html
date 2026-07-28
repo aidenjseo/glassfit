@@ -18,6 +18,9 @@
       <li data-stepdot="review"><span>2</span>Inputs</li>
       <li data-stepdot="results"><span>3</span>Results</li>
     </ol>
+    <nav class="header-links" aria-label="Site">
+      <a href="/model.html">How it works</a>
+    </nav>
   </header>
 
   <div id="banner" class="banner" hidden></div>
@@ -25,7 +28,21 @@
   <main>
     <!-- 1 · Camera -->
     <section data-step="camera" aria-labelledby="h-camera">
-      <h1 id="h-camera" tabindex="-1">Scan your face</h1>
+      <div class="hero-band">
+        <div class="hero-copy">
+          <p class="eyebrow">Frame fitting, measured</p>
+          <h1 id="h-camera" class="display" tabindex="-1">Glasses that <em>fit</em> &mdash;
+            measured, not guessed.</h1>
+          <p class="hero-sub">One webcam scan turns your face into optician-grade millimeters,
+            then ranks real frames by how they&rsquo;d actually sit. Private, offline, on your
+            machine.</p>
+          <button id="btn-hero-start" class="primary" type="button">Start your scan</button>
+        </div>
+        <figure class="hero-photo">
+          <img src="/img/editorial/hero.jpg" alt="" onerror="this.parentElement.hidden = true">
+        </figure>
+      </div>
+      <h2 id="h-scan">Scan your face</h2>
       <p class="hint"><strong>One scan, one click.</strong> Press <strong>Begin scan</strong> and
         the app guides you through three poses automatically &mdash; nothing to do separately.
         Sit 40&ndash;60&nbsp;cm away in even light, <strong>glasses off</strong> (you&rsquo;re
@@ -158,8 +175,16 @@
       <div id="tryon-root" hidden>
         <h2 class="section-title" id="h-tryon">Virtual try-on</h2>
         <div class="tryon-panel">
-          <canvas id="tryon-canvas"
-                  aria-label="Your scan photo with the selected frame drawn at its true size"></canvas>
+          <div class="tryon-stagecol">
+            <div class="tryon-mode" role="group" aria-label="Try-on mode">
+              <button id="tryon-mode-photo" type="button" class="active">Photo</button>
+              <button id="tryon-mode-live" type="button">Live camera</button>
+            </div>
+            <canvas id="tryon-canvas"
+                    aria-label="Your face with the selected frame drawn at its true size"></canvas>
+            <video id="tryon-video" playsinline muted hidden></video>
+            <p id="tryon-live-status" class="hint tryon-status" hidden role="status"></p>
+          </div>
           <div class="tryon-side">
             <p class="tryon-label">Pick a frame</p>
             <div id="tryon-picker" class="tryon-picker"></div>

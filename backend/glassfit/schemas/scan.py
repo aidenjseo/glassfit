@@ -57,6 +57,20 @@ class ProbeResponse(BaseModel):
     message: str  # human copy for the on-stage hint
 
 
+class TrackResponse(BaseModel):
+    """Per-frame anchors for the LIVE try-on: pupil positions in sent-frame pixels.
+
+    The client scales anchors to its full-resolution video, derives roll from the
+    pupil line, and sizes the glasses from the user's known PD. Nothing is stored.
+    """
+
+    ok: bool
+    image_width: int | None = None
+    image_height: int | None = None
+    pupil_right: Point2 | None = None  # subject-anatomical right (OD)
+    pupil_left: Point2 | None = None
+
+
 class ScanResponse(BaseModel):
     scan_id: str
     # Normalized canonical (median-aggregated) set, aligned to the best frame's geometry.

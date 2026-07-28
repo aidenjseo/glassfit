@@ -40,6 +40,7 @@ from .scan import (
     ScanQuality,
     ScanResponse,
     SideViewSummary,
+    TrackResponse,
 )
 
 __all__ = [
@@ -82,4 +83,5 @@ __all__ = [
     "ScanResponse",
     "SideViewSummary",
     "Temples",
+    "TrackResponse",
 ]

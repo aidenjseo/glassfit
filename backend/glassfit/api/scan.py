@@ -5,8 +5,8 @@ from typing import Annotated
 from fastapi import APIRouter, File, Request, UploadFile
 
 from glassfit.api.deps import DetectorDep, RepoDep, SettingsDep
-from glassfit.schemas import ProbeResponse, ScanResponse
-from glassfit.services.scan_service import run_probe, run_scan
+from glassfit.schemas import ProbeResponse, ScanResponse, TrackResponse
+from glassfit.services.scan_service import run_probe, run_scan, run_track
 
 router = APIRouter(tags=["scan"])
 
@@ -29,6 +29,15 @@ def scan_probe(
         settings=settings,
         lock=request.app.state.detector_lock,
     )
+
+
+@router.post("/scan/track", response_model=TrackResponse)
+def scan_track(
+    request: Request,
+    detector: DetectorDep,
+    frame: Annotated[UploadFile, File(description="one live try-on frame; never stored")],
+) -> TrackResponse:
+    return run_track(frame.file.read(), detector=detector, lock=request.app.state.detector_lock)
 
 
 @router.post("/scan", response_model=ScanResponse)

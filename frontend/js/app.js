@@ -8,6 +8,7 @@ import {
   postRecommendations,
   postScan,
   postScanProbe,
+  postScanTrack,
 } from './api.js';
 import { Camera } from './camera.js';
 import { $, setError } from './dom.js';
@@ -20,7 +21,7 @@ import {
 } from './forms.js';
 import { drawScanOverlay, renderQualityChips } from './overlay.js';
 import { ratingControl, renderFrameMatches, renderResults } from './results.js';
-import { drawTryOn } from './tryon.js';
+import { drawTryOn, isLiveActive, setLiveFrame, startLive, stopLive } from './tryon.js';
 
 // bestFrameBlob: the one captured frame kept after upload (for the review overlay) —
 // the raw bursts (~1-2 MB of JPEGs) are released as soon as the scan succeeds.
@@ -34,6 +35,7 @@ const session = {
   matches: [],
   onRate: null, // the rating poster bound to the current recommendation
   tryOnBitmap: null,
+  activeTryOnMatch: null,
   matchSeq: 0,
 };
 const camera = new Camera($('preview'));
@@ -249,9 +251,13 @@ function backToCamera() {
   session.bursts = { front: [], left: [], right: [] };
   session.matches = [];
   session.onRate = null;
+  session.activeTryOnMatch = null;
   session.tryOnBitmap?.close();
   session.tryOnBitmap = null;
   session.matchSeq += 1; // orphan any in-flight match fetch
+  stopLive();
+  setTryOnStatus(null);
+  setTryOnModeButtons('photo');
   $('matches-root').textContent = '';
   $('tryon-root').hidden = true;
   $('feedback-form').reset(); // stale answers must never ride into a new session
@@ -314,21 +320,69 @@ async function loadFrameMatches(recommendationId) {
 }
 
 // ---- virtual try-on ---------------------------------------------------------
+function setTryOnStatus(text) {
+  const status = $('tryon-live-status');
+  status.textContent = text || '';
+  status.hidden = !text;
+}
+
+function setTryOnModeButtons(mode) {
+  $('tryon-mode-photo').classList.toggle('active', mode === 'photo');
+  $('tryon-mode-live').classList.toggle('active', mode === 'live');
+}
+
+async function startLiveTryOn() {
+  const match = session.activeTryOnMatch;
+  if (!match) return;
+  try {
+    setTryOnStatus('Starting camera…');
+    await startLive({
+      canvas: $('tryon-canvas'),
+      video: $('tryon-video'),
+      frame: match.frame,
+      analysis: session.analysis,
+      postTrack: postScanTrack,
+      onStatus: setTryOnStatus,
+    });
+    setTryOnModeButtons('live');
+    announce('Live try-on started — the frame follows your face.');
+  } catch (err) {
+    setTryOnStatus(err.message || 'Camera unavailable — staying in photo mode.');
+    setTryOnModeButtons('photo');
+  }
+}
+
+async function stopLiveTryOn() {
+  stopLive();
+  setTryOnStatus(null);
+  setTryOnModeButtons('photo');
+  if (session.activeTryOnMatch) await drawTryOnPhoto(session.activeTryOnMatch);
+}
+
+async function drawTryOnPhoto(match) {
+  session.tryOnBitmap ??= await createImageBitmap(session.bestFrameBlob);
+  await drawTryOn(
+    $('tryon-canvas'),
+    session.tryOnBitmap,
+    session.scan,
+    session.analysis,
+    match.frame
+  );
+}
+
 async function openTryOn(match) {
   if (!session.bestFrameBlob || !session.analysis || !session.scan) return;
   try {
-    session.tryOnBitmap ??= await createImageBitmap(session.bestFrameBlob);
+    session.activeTryOnMatch = match;
     $('tryon-root').hidden = false;
     renderTryOnPicker(match.frame.frame_id);
     mountTryOnRating(match);
-    await drawTryOn(
-      $('tryon-canvas'),
-      session.tryOnBitmap,
-      session.scan,
-      session.analysis,
-      match.frame
-    );
-    announce(`Trying on ${match.frame.name} — drawn at its true size on your scan.`);
+    if (isLiveActive()) {
+      await setLiveFrame(match.frame); // swap frames without restarting the camera
+    } else {
+      await drawTryOnPhoto(match);
+    }
+    announce(`Trying on ${match.frame.name} — drawn at its true size.`);
     $('h-tryon').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch {
     $('tryon-root').hidden = true;
@@ -386,6 +440,14 @@ function wire() {
   initForms();
   buildFeedbackControls();
   $('btn-start').addEventListener('click', startCamera);
+  $('btn-hero-start').addEventListener('click', () => {
+    startCamera();
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    document.querySelector('.stage').scrollIntoView({
+      behavior: reduce ? 'auto' : 'smooth',
+      block: 'center',
+    });
+  });
   $('btn-retry-camera').addEventListener('click', startCamera);
   $('btn-scan').addEventListener('click', runScan);
   $('btn-retry-scan').addEventListener('click', () => {
@@ -400,7 +462,16 @@ function wire() {
   $('btn-rescan-results').addEventListener('click', backToCamera);
   $('btn-rescan-done').addEventListener('click', backToCamera);
   $('btn-tryon-close').addEventListener('click', () => {
+    stopLive();
+    setTryOnStatus(null);
+    setTryOnModeButtons('photo');
     $('tryon-root').hidden = true;
+  });
+  $('tryon-mode-live').addEventListener('click', () => {
+    if (!isLiveActive()) startLiveTryOn();
+  });
+  $('tryon-mode-photo').addEventListener('click', () => {
+    if (isLiveActive()) stopLiveTryOn();
   });
 
   getHealth()

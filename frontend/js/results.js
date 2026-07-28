@@ -1,6 +1,8 @@
 // Results rendering: measurements table + recommendation cards + fitting guidance.
 // A dumb walk over the /recommendations response — field names mirror the backend schemas.
 
+import { frameArtSVG } from './frameart.js';
+
 const mm = (v) => Number(v).toFixed(1); // one decimal — used for degrees too
 const deg = mm;
 const pct = (v) => `${Math.round(v * 100)}`;
@@ -256,20 +258,25 @@ export function renderFrameMatches(root, data, onRate, onTryOn) {
     return;
   }
   root.appendChild(el('h2', { class: 'section-title', text: 'Frames that fit you' }));
-  const grid = el('div', { class: 'cards' });
+  const grid = el('div', { class: 'cards plp' });
   for (const match of data.matches) {
     const { frame } = match;
     const cardEl = el('div', { class: 'card match-card' });
+    const media = el('div', { class: 'card-media' });
+    media.insertAdjacentHTML('beforeend', frameArtSVG(frame));
+    cardEl.appendChild(media);
+    const body = el('div', { class: 'card-body' });
+    cardEl.appendChild(body);
     const head = el('div', { class: 'match-head' });
     head.appendChild(el('span', { class: 'match-name', text: frame.name }));
     head.appendChild(el('span', { class: 'match-score', text: `${Math.round(match.fit_score * 100)}% fit` }));
-    cardEl.appendChild(head);
+    body.appendChild(head);
     const chips = el('div', { class: 'chips' });
     for (const tag of [frame.shape, frame.material, frame.rim, frame.nose_pads.replace('_', ' ')]) {
       chips.appendChild(el('span', { class: 'chip', text: tag }));
     }
-    cardEl.appendChild(chips);
-    cardEl.appendChild(el('div', {
+    body.appendChild(chips);
+    body.appendChild(el('div', {
       class: 'match-dims',
       text:
         `A ${frame.a_mm}${fmtDelta(match.deltas.a_mm)} · ` +
@@ -277,21 +284,21 @@ export function renderFrameMatches(root, data, onRate, onTryOn) {
         `B ${frame.b_mm}${fmtDelta(match.deltas.b_mm)} · ` +
         `temple ${frame.temple_mm}${fmtDelta(match.deltas.temple_length_mm)}`,
     }));
-    cardEl.appendChild(meter('Overall fit', match.fit_score));
+    body.appendChild(meter('Overall fit', match.fit_score));
     if (match.flags.length) {
       const list = el('ul', { class: 'match-flags' });
       for (const flag of match.flags) list.appendChild(el('li', { text: flag }));
-      cardEl.appendChild(list);
+      body.appendChild(list);
     }
     if (match.components && Object.keys(match.components).length) {
-      cardEl.appendChild(componentBreakdown(match.components));
+      body.appendChild(componentBreakdown(match.components));
     }
     if (onTryOn) {
       const tryBtn = el('button', { class: 'tryon-btn', type: 'button', text: 'Try on ↓' });
       tryBtn.addEventListener('click', () => onTryOn(match));
-      cardEl.appendChild(tryBtn);
+      body.appendChild(tryBtn);
     }
-    if (onRate) cardEl.appendChild(ratingControl(match, onRate));
+    if (onRate) body.appendChild(ratingControl(match, onRate));
     grid.appendChild(cardEl);
   }
   root.appendChild(grid);

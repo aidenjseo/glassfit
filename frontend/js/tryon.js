@@ -1,4 +1,13 @@
-// Virtual try-on: composite a frame onto the user's scan photo at TRUE scale.
+// Virtual try-on: composite a frame onto the user's face at TRUE scale.
+//
+// Two modes share the same art + geometry:
+//   Photo — the best scan frame with anchors from the stored scan (default).
+//   Live  — the camera feed rendered at 60fps; a background loop posts a
+//           downscaled frame every ~110ms to /scan/track (server-side MediaPipe,
+//           ~25ms on localhost) and the render loop lerps the glasses toward the
+//           latest pupil anchors, so video is butter-live and the frames glide.
+
+import { Camera } from './camera.js';
 //
 // Everything needed is already measured: the scan keeps pupil positions in pixels
 // and the analysis provides mm_per_unit (mm per photo pixel), so a frame with a
@@ -134,6 +143,143 @@ async function frameArt(frame) {
   }
   artCache.set(frame.frame_id, art);
   return art;
+}
+
+// ---- live mode --------------------------------------------------------------
+
+const TRACK_WIDTH = 384; // downscaled tracking frames: ~20KB upload, fast detect
+let live = null;
+
+export function isLiveActive() {
+  return live !== null;
+}
+
+/** Start live try-on. Throws CameraError when the camera can't start. */
+export async function startLive({ canvas, video, frame, analysis, postTrack, onStatus }) {
+  stopLive();
+  const cam = new Camera(video);
+  await cam.start();
+  const state = {
+    cam,
+    canvas,
+    analysis,
+    postTrack,
+    onStatus,
+    frame,
+    art: await frameArt(frame),
+    target: null, // latest server anchors, full-res video coords
+    smooth: null, // lerped anchors actually drawn
+    trackCanvas: document.createElement('canvas'),
+    raf: 0,
+    pollTimer: 0,
+    stopped: false,
+    inFlight: false,
+    missed: 0,
+  };
+  cam.onLost = () => {
+    onStatus?.('Camera stopped — it may be in use elsewhere.');
+    stopLive();
+  };
+  live = state;
+  onStatus?.('Looking for your face…');
+  const step = () => {
+    if (state.stopped) return;
+    drawLiveFrame(state);
+    state.raf = requestAnimationFrame(step);
+  };
+  state.raf = requestAnimationFrame(step);
+  state.pollTimer = setInterval(() => pollTrack(state), 110);
+}
+
+/** Swap the worn frame without restarting the camera. */
+export async function setLiveFrame(frame) {
+  if (!live) return;
+  live.frame = frame;
+  live.art = await frameArt(frame);
+}
+
+export function stopLive() {
+  if (!live) return;
+  live.stopped = true;
+  clearInterval(live.pollTimer);
+  cancelAnimationFrame(live.raf);
+  live.cam.stop();
+  live = null;
+}
+
+async function pollTrack(state) {
+  if (state.inFlight || state.stopped || !state.cam.ready) return;
+  state.inFlight = true;
+  try {
+    const v = state.cam.video;
+    const tc = state.trackCanvas;
+    tc.width = TRACK_WIDTH;
+    tc.height = Math.round((v.videoHeight / v.videoWidth) * TRACK_WIDTH);
+    tc.getContext('2d').drawImage(v, 0, 0, tc.width, tc.height);
+    const blob = await new Promise((r) => tc.toBlob(r, 'image/jpeg', 0.7));
+    if (!blob || state.stopped) return;
+    const track = await state.postTrack(blob);
+    if (state.stopped) return;
+    if (track.ok) {
+      const s = v.videoWidth / track.image_width;
+      state.target = {
+        pr: [track.pupil_right[0] * s, track.pupil_right[1] * s],
+        pl: [track.pupil_left[0] * s, track.pupil_left[1] * s],
+      };
+      state.missed = 0;
+      state.onStatus?.(null);
+    } else if ((state.missed += 1) >= 4) {
+      state.target = null; // hide the glasses after ~0.5s without a face
+      state.onStatus?.('Looking for your face…');
+    }
+  } catch {
+    /* tracking is advisory — the video keeps rendering */
+  } finally {
+    state.inFlight = false;
+  }
+}
+
+function drawLiveFrame(state) {
+  const v = state.cam.video;
+  if (!v.videoWidth) return;
+  const { canvas } = state;
+  if (canvas.width !== v.videoWidth) {
+    canvas.width = v.videoWidth;
+    canvas.height = v.videoHeight;
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.save();
+  ctx.translate(canvas.width, 0);
+  ctx.scale(-1, 1); // selfie mirror, video and glasses alike
+  ctx.drawImage(v, 0, 0);
+  if (state.target) {
+    if (!state.smooth) {
+      state.smooth = { pr: [...state.target.pr], pl: [...state.target.pl] };
+    }
+    for (const key of ['pr', 'pl']) {
+      for (let i = 0; i < 2; i += 1) {
+        state.smooth[key][i] += (state.target[key][i] - state.smooth[key][i]) * 0.35;
+      }
+    }
+    const { pr, pl } = state.smooth;
+    const cx = (pr[0] + pl[0]) / 2;
+    const cy = (pr[1] + pl[1]) / 2;
+    const roll = Math.atan2(pl[1] - pr[1], pl[0] - pr[0]);
+    // per-frame absolute scale: the pupil gap on screen IS the user's PD in mm
+    const pxPerMM =
+      Math.hypot(pl[0] - pr[0], pl[1] - pr[1]) / state.analysis.measurements.pd_binocular_mm;
+    const drawW = state.art.wMM * pxPerMM;
+    const drawH = drawW * (state.art.img.naturalHeight / state.art.img.naturalWidth);
+    const oc =
+      (state.analysis.optics.oc_height_mm.right + state.analysis.optics.oc_height_mm.left) / 2;
+    const drop = (oc - state.frame.b_mm / 2) * pxPerMM;
+    ctx.translate(cx, cy + drop);
+    ctx.rotate(roll);
+    ctx.drawImage(state.art.img, -drawW / 2, -drawH / 2, drawW, drawH);
+  } else {
+    state.smooth = null;
+  }
+  ctx.restore();
 }
 
 /**

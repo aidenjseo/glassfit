@@ -87,6 +87,12 @@ export function postScanProbe(blob) {
   return request('/scan/probe', { method: 'POST', body: form });
 }
 
+export function postScanTrack(blob) {
+  const form = new FormData();
+  form.append('frame', blob, 'track.jpg');
+  return request('/scan/track', { method: 'POST', body: form });
+}
+
 export function postMatchRating(payload) {
   return request('/frames/ratings', {
     method: 'POST',
