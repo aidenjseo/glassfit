@@ -68,10 +68,6 @@ h1 { font-size: 1.875rem; font-weight: 600; line-height: 1.2; margin: 1.1rem 0 0
 h2 { font-size: 1.125rem; font-weight: 600; line-height: 1.25; margin: 0 0 0.35rem; }
 .display { font-size: clamp(2.1rem, 4.6vw, 3.15rem); font-weight: 300; line-height: 1.12; margin: 0 0 0.6rem; }
 .display em { font-style: italic; font-weight: 350; color: var(--green-text); }
-.eyebrow {
-  font-size: 0.8125rem; letter-spacing: 0.14em; text-transform: uppercase;
-  color: var(--green-text); font-weight: 600; margin: 0 0 0.8rem;
-}
 .hint { color: var(--muted); margin: 0.3rem 0 1.3rem; max-width: 62ch; }
 .hint strong { font-weight: 600; }
 
