@@ -1,7 +1,7 @@
 """Recommendation orchestration: request -> measurements -> rules -> persistence."""
 
 from glassfit.config import Settings
-from glassfit.errors import NotFound
+from glassfit.errors import InvalidLandmarks, NotFound
 from glassfit.measure.extractor import compute_measurements
 from glassfit.rules.engine import recommend
 from glassfit.rules.params import load_rule_params
@@ -11,6 +11,7 @@ from glassfit.schemas import (
     RecommendationRequest,
     RecommendationResponse,
 )
+from glassfit.schemas.common import LandmarkSet
 from glassfit.storage.repo import Repo
 
 
@@ -37,6 +38,14 @@ def _apply_side_view_refinement(measurements: FaceMeasurements, scan: dict) -> F
     return measurements.model_copy(update={"hinge_to_ear_mm": new_side, "quality": new_quality})
 
 
+def _compute_or_422(landmarks: LandmarkSet, pd_mm: float) -> FaceMeasurements:
+    """Degenerate geometry raises ValueError deep in numpy — surface it as a 422."""
+    try:
+        return compute_measurements(landmarks, pd_mm)
+    except ValueError as exc:
+        raise InvalidLandmarks(f"landmarks do not form a measurable face: {exc}") from exc
+
+
 def _resolve_measurements(
     req: RecommendationRequest | MeasurementRequest, repo: Repo
 ) -> tuple[FaceMeasurements, str | None]:
@@ -45,10 +54,10 @@ def _resolve_measurements(
         scan = repo.get_scan(req.scan_id)
         if scan is None:
             raise NotFound(f"scan {req.scan_id!r} not found", details={"scan_id": req.scan_id})
-        measurements = compute_measurements(scan["landmarks"], req.pd_mm)
+        measurements = _compute_or_422(scan["landmarks"], req.pd_mm)
         return _apply_side_view_refinement(measurements, scan), req.scan_id
     if req.landmarks is not None:
-        return compute_measurements(req.landmarks, req.pd_mm), None
+        return _compute_or_422(req.landmarks, req.pd_mm), None
     assert isinstance(req, RecommendationRequest) and req.measurements is not None
     return req.measurements, None
 

@@ -28,8 +28,9 @@ def test_exact_widths_and_pd(case: tuple[FaceMeasurements, dict]) -> None:
     assert m.pd_monocular_mm.left == pytest.approx(exp["pd_monocular_left_mm"], abs=1e-6)
     assert m.zygoma_width_mm == pytest.approx(exp["zygoma_width_mm"], abs=1e-6)
     assert m.temple_width_mm == pytest.approx(exp["temple_width_mm"], abs=1e-6)
-    assert m.face_length_mm == pytest.approx(exp["face_length_mm"], abs=1e-6)
-    assert m.jaw_width_mm == pytest.approx(exp["jaw_width_mm"], abs=1e-6)
+    # 1e-4: fixture coords are serialized at 8 normalized decimals (~3e-6 mm error)
+    assert m.face_length_mm == pytest.approx(exp["face_length_mm"], abs=1e-4)
+    assert m.jaw_width_mm == pytest.approx(exp["jaw_width_mm"], abs=1e-4)
 
 
 def test_vertical_and_depth_features(case: tuple[FaceMeasurements, dict]) -> None:

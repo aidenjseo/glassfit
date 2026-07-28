@@ -4,6 +4,7 @@ The connection is created with ``check_same_thread=False`` because FastAPI runs 
 in a threadpool; callers (``Repo``) serialize writes behind a lock.
 """
 
+import json
 import sqlite3
 from collections.abc import Callable
 from pathlib import Path
@@ -56,12 +57,39 @@ def _unique_match_ratings(conn: sqlite3.Connection) -> None:
     )
 
 
+def _backfill_face_length_jaw(conn: sqlite3.Connection) -> None:
+    """v4: backfill ``face_length_mm``/``jaw_width_mm`` into pre-existing rows.
+
+    The fields were added to FaceMeasurements after early rows were written; without
+    them, re-parsing legacy ``measurements_json`` fails. Backfilled values are
+    ESTIMATES from the empirical proportion means of 77 real portrait scans
+    (length ~1.20 x zygoma, jaw ~0.91 x zygoma; see catalog.match EMPIRICAL_* for
+    the LIVE constants — these literals are frozen with the shipped migration)
+    and are flagged in warnings.
+    """
+    rows = conn.execute("SELECT id, measurements_json FROM recommendations").fetchall()
+    for row in rows:
+        data = json.loads(row[1])
+        if "face_length_mm" in data and "jaw_width_mm" in data:
+            continue
+        zygoma = float(data.get("zygoma_width_mm", 130.0))
+        data.setdefault("face_length_mm", round(1.20 * zygoma, 2))
+        data.setdefault("jaw_width_mm", round(0.91 * zygoma, 2))
+        quality = data.setdefault("quality", {})
+        quality.setdefault("warnings", []).append("face_length_jaw_backfilled_v4")
+        conn.execute(
+            "UPDATE recommendations SET measurements_json = ? WHERE id = ?",
+            (json.dumps(data), row[0]),
+        )
+
+
 # Ordered migrations: (target user_version, migration to reach it from the previous version).
 # To evolve the schema, append the next entry — never edit shipped entries.
 MIGRATIONS: tuple[tuple[int, Migration], ...] = (
     (1, _apply_base_schema),
     (2, _add_match_ratings),
     (3, _unique_match_ratings),
+    (4, _backfill_face_length_jaw),
 )
 
 

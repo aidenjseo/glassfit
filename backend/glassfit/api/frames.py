@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 
 from glassfit.api.deps import RepoDep, SettingsDep
-from glassfit.catalog.match import MatchContext, match_frames
+from glassfit.catalog.match import MatchContext, context_for_recommendation, match_frames
 from glassfit.errors import NotFound
 from glassfit.rules.params import load_rule_params
 from glassfit.schemas import (
@@ -45,14 +45,9 @@ def frames_match(
                 f"recommendation {req.recommendation_id!r} not found",
                 details={"recommendation_id": req.recommendation_id},
             )
-        rec = stored["recommendation"]
-        measurements = stored["measurements"]
         low_crest = load_rule_params(settings.rules_path).nose_pads.low_crest_adjustable_mm
-        ctx = MatchContext(
-            targets=rec.frame,
-            measurements=measurements,
-            face_form_target_deg=rec.as_worn.face_form_deg,
-            prefer_low_bridge=measurements.bridge_crest_height_mm < low_crest,
+        ctx = context_for_recommendation(
+            stored["recommendation"], stored["measurements"], low_crest
         )
     else:
         assert req.targets is not None  # guaranteed by the request validator

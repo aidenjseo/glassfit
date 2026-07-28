@@ -16,6 +16,7 @@ the temple on the HIGHER-ear side is raised to level the frame.
 import math
 from uuid import uuid4
 
+from ..catalog.match import frame_front_width_mm
 from ..schemas import (
     AsWorn,
     Comfort,
@@ -418,7 +419,7 @@ def recommend(
 
     # --- comfort proxies ---------------------------------------------------
     cp = p.comfort
-    front_width = frame_pd + a_mm + 2.0 * cp.endpiece_mm
+    front_width = frame_front_width_mm(a_mm, dbl_mm, 2.0 * cp.endpiece_mm)
     overhang = m.temple_width_mm - front_width
     tpp = cp.temple_pressure
     temple_pressure = emit(

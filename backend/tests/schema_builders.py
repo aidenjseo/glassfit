@@ -6,10 +6,12 @@ pytest's pythonpath). Override any field via ``model_copy(update=...)`` on the r
 or the keyword passthroughs below.
 """
 
+from glassfit.catalog.match import EMPIRICAL_JAW_RATIO, EMPIRICAL_LENGTH_RATIO
 from glassfit.schemas import (
     AsWorn,
     BehindEar,
     BridgeWidths,
+    CatalogFrame,
     Comfort,
     FaceMeasurements,
     FrameDims,
@@ -36,8 +38,8 @@ def sample_measurements(**overrides) -> FaceMeasurements:
         bridge_crest_height_mm=8.0,
         zygoma_width_mm=132.0,
         temple_width_mm=138.0,
-        face_length_mm=142.0,
-        jaw_width_mm=98.0,
+        face_length_mm=round(132.0 * EMPIRICAL_LENGTH_RATIO, 1),  # 'balanced' tercile
+        jaw_width_mm=round(132.0 * EMPIRICAL_JAW_RATIO, 1),  # below the 'angular' tercile
         face_wrap_radius_mm=95.0,
         cheek_clearance_mm=side(6.0, 5.5),
         hinge_to_ear_mm=side(98.0, 99.0),
@@ -83,3 +85,24 @@ def sample_recommendation(rec_id: str = "rec-1", **overrides) -> Recommendation:
         },
     )
     return base.model_copy(update=overrides) if overrides else base
+
+
+def sample_frame(**overrides) -> CatalogFrame:
+    """The one CatalogFrame test builder (was quadruplicated across suites)."""
+    base = {
+        "frame_id": "F-1",
+        "name": "Test",
+        "shape": "rectangle",
+        "material": "acetate",
+        "rim": "full",
+        "a_mm": 52.0,
+        "b_mm": 38.0,
+        "dbl_mm": 18.0,
+        "ed_mm": 55.0,
+        "temple_mm": 145.0,
+        "weight_g": 22.0,
+        "bridge_style": "keyhole",
+        "nose_pads": "fixed_acetate",
+        "tags": [],
+    }
+    return CatalogFrame(**{**base, **overrides})

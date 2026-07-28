@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from schema_builders import sample_measurements, sample_recommendation
+from schema_builders import sample_frame, sample_measurements, sample_recommendation
 
 from glassfit.errors import NotFound
 from glassfit.schemas import (
@@ -45,22 +45,7 @@ def _quality() -> ScanQuality:
 
 
 def _catalog_frame() -> CatalogFrame:
-    return CatalogFrame(
-        frame_id="TEST-01",
-        name="Test Frame",
-        shape="rectangle",
-        material="acetate",
-        rim="full",
-        a_mm=52.0,
-        b_mm=38.0,
-        dbl_mm=18.0,
-        ed_mm=55.0,
-        temple_mm=145.0,
-        weight_g=22.0,
-        bridge_style="keyhole",
-        nose_pads="fixed_acetate",
-        tags=["test"],
-    )
+    return sample_frame(frame_id="TEST-01", name="Test Frame", tags=["test"])
 
 
 def _save_scan(repo: Repo, scan_id: str = "scan-1") -> str:
@@ -110,7 +95,7 @@ def test_connect_creates_schema_and_sets_user_version(tmp_path: Path) -> None:
     c = connect(db_path)
     try:
         assert db_path.exists()
-        assert c.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert c.execute("PRAGMA user_version").fetchone()[0] == 4
         assert c.execute("PRAGMA foreign_keys").fetchone()[0] == 1
         tables = {
             r["name"] for r in c.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
@@ -326,7 +311,7 @@ def test_check_constraints_enforced(
 
 
 def test_fresh_db_is_at_current_schema_with_match_ratings(conn: sqlite3.Connection) -> None:
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 3
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 4
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert "match_ratings" in tables
 
@@ -343,7 +328,7 @@ def test_v1_db_upgrades_in_place_preserving_data(tmp_path: Path) -> None:
     conn.close()
 
     upgraded = connect(path)
-    assert upgraded.execute("PRAGMA user_version").fetchone()[0] == 3
+    assert upgraded.execute("PRAGMA user_version").fetchone()[0] == 4
     assert upgraded.execute("SELECT COUNT(*) FROM recommendations").fetchone()[0] == 1
     Repo(upgraded).save_match_rating(
         MatchRatingIn(recommendation_id="rec-old", frame_id=_seed_frame(upgraded), rating=5)
@@ -422,4 +407,33 @@ def test_v2_dup_ratings_deduped_by_v3_migration(tmp_path: Path) -> None:
     rows = upgraded.execute("SELECT rating FROM match_ratings").fetchall()
     assert len(rows) == 1
     assert rows[0]["rating"] == 4  # the later row survived
+    upgraded.close()
+
+
+def test_v4_backfills_legacy_measurements(tmp_path: Path) -> None:
+    path = tmp_path / "legacy.db"
+    conn = connect(path)
+    repo = Repo(conn)
+    _save_recommendation(repo, scan_id=None, rec_id="rec-legacy")
+    # simulate a pre-v4 row: strip the new fields and roll the version back
+    row = conn.execute(
+        "SELECT measurements_json FROM recommendations WHERE id='rec-legacy'"
+    ).fetchone()
+    legacy = json.loads(row["measurements_json"])
+    legacy.pop("face_length_mm")
+    legacy.pop("jaw_width_mm")
+    conn.execute(
+        "UPDATE recommendations SET measurements_json=? WHERE id='rec-legacy'",
+        (json.dumps(legacy),),
+    )
+    conn.execute("PRAGMA user_version = 3")
+    conn.commit()
+    conn.close()
+
+    upgraded = connect(path)
+    stored = Repo(upgraded).get_recommendation("rec-legacy")  # must parse again
+    assert stored is not None
+    m = stored["measurements"]
+    assert m.face_length_mm == pytest.approx(1.20 * m.zygoma_width_mm, rel=0.01)
+    assert "face_length_jaw_backfilled_v4" in m.quality.warnings
     upgraded.close()

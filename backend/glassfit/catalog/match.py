@@ -37,6 +37,23 @@ _FRAME_ATTR = {**{d: d for d in _DIMS}, "temple_length_mm": "temple_mm"}
 
 NEUTRAL = 0.7  # component value when the data to judge it is absent
 
+# Empirical face-proportion MEANS from 77 real portrait scans — the single live home
+# for these ratios (fixtures and test builders import them; migration v4 keeps its own
+# frozen literals by design, since shipped backfills must not drift with recalibration).
+EMPIRICAL_LENGTH_RATIO = 1.20  # face_length / zygoma
+EMPIRICAL_JAW_RATIO = 0.91  # jaw_width / zygoma
+
+
+def frame_front_width_mm(a_mm: float, dbl_mm: float, endpiece_total_mm: float) -> float:
+    """Total frame-front width: both lenses + bridge + end pieces.
+
+    The one home for the ``2A + DBL + endpieces`` formula — the rules engine's
+    comfort proxy, the width_fit component, and the synthetic-label generator all
+    consume it, so a retuned endpiece allowance can never silently diverge.
+    """
+    return 2.0 * a_mm + dbl_mm + endpiece_total_mm
+
+
 # frame shapes considered "angular" vs "rounded" for shape affinity
 _ANGULAR_SHAPES = {"rectangle", "square", "geometric", "wayfarer", "browline"}
 _ROUNDED_SHAPES = {"round", "oval", "panto", "aviator"}
@@ -81,10 +98,13 @@ class MatchParams:
     wrap_span_deg: float = 6.0
     weight_norm_g: tuple[float, float] = (8.0, 28.0)
     low_crest_mm: float = 6.0  # matches rules nose_pads.low_crest_adjustable_mm
-    # shape affinity
-    long_face_ratio: float = 1.16  # face_length / zygoma above -> "long"
-    short_face_ratio: float = 1.00
-    angular_jaw_ratio: float = 0.78  # jaw / zygoma above -> "angular"
+    # shape affinity — thresholds are EMPIRICAL TERCILES from 77 real portrait scans
+    # (length_ratio mean 1.196 sd 0.046; jaw_ratio mean 0.910 sd 0.035). Landmark 10
+    # sits near the hairline and 58/288 outside true gonion, so these proxy ratios run
+    # higher than textbook anthropometry — calibrate against the proxies, not textbooks.
+    long_face_ratio: float = 1.22  # face_length / zygoma above -> "long" (top tercile)
+    short_face_ratio: float = 1.175  # below -> "short" (bottom tercile)
+    angular_jaw_ratio: float = 0.92  # jaw / zygoma above -> "angular" (top tercile)
     b_over_a_by_length: dict[str, float] = field(
         default_factory=lambda: {"long": 0.80, "balanced": 0.72, "short": 0.66}
     )
@@ -103,6 +123,22 @@ class MatchContext:
     measurements: FaceMeasurements | None = None
     face_form_target_deg: float | None = None
     prefer_low_bridge: bool = False
+
+
+def context_for_recommendation(
+    recommendation, measurements: FaceMeasurements, low_crest_mm: float
+) -> MatchContext:
+    """The canonical stored-recommendation -> MatchContext mapping.
+
+    One home for the prefer-low-bridge rule so the live API and the synthetic-label
+    generator can never diverge on it.
+    """
+    return MatchContext(
+        targets=recommendation.frame,
+        measurements=measurements,
+        face_form_target_deg=recommendation.as_worn.face_form_deg,
+        prefer_low_bridge=measurements.bridge_crest_height_mm < low_crest_mm,
+    )
 
 
 def _band01(value: float, span: float) -> float:
@@ -184,7 +220,7 @@ def _width_fit(
 ) -> float:
     if ctx.measurements is None:
         return _band01(deltas["a_mm"], 4.0)
-    front = 2.0 * frame.a_mm + frame.dbl_mm + p.endpiece_total_mm
+    front = frame_front_width_mm(frame.a_mm, frame.dbl_mm, p.endpiece_total_mm)
     overhang = ctx.measurements.temple_width_mm - front  # >0: head wider -> pressure
     if overhang > 0:
         return _band01_tailed(overhang, p.overhang_pinch_span_mm)
@@ -195,15 +231,19 @@ def _width_fit(
 def _lens_height(
     frame: CatalogFrame, deltas: dict[str, float], ctx: MatchContext, p: MatchParams
 ) -> float:
-    target_term = _band01(deltas["b_mm"], p.b_span_mm)
+    # tailed bands: deep frames on high cheeks can exceed both spans across the whole
+    # catalog — a hard floor at 0 would tie them all (same failure class as centration)
+    target_term = _band01_tailed(deltas["b_mm"], p.b_span_mm)
     m = ctx.measurements
     if m is None:
         return target_term
+    # pupil_height_ratio measures UP from the lens bottom (0 = bottom lid), so the
+    # lens depth below the pupil is B * ratio — the OC height itself.
     pupil_frac = (m.pupil_height_ratio.right + m.pupil_height_ratio.left) / 2.0
-    below_pupil = frame.b_mm * (1.0 - pupil_frac)
+    below_pupil = frame.b_mm * pupil_frac
     clearance = (m.cheek_clearance_mm.right + m.cheek_clearance_mm.left) / 2.0
     excess = below_pupil - (clearance + p.cheek_allowance_mm)
-    cheek_term = 1.0 if excess <= 0 else _band01(excess, p.cheek_excess_span_mm)
+    cheek_term = 1.0 if excess <= 0 else _band01_tailed(excess, p.cheek_excess_span_mm)
     return 0.4 * target_term + 0.6 * cheek_term
 
 

@@ -1,9 +1,13 @@
 """Repository layer: typed CRUD over the GlassFit SQLite database.
 
-Writes are serialized behind a ``threading.Lock`` (the connection is shared across the FastAPI
-threadpool with ``check_same_thread=False``). Reads go straight to SQLite.
+ALL database access — reads included — is serialized behind one ``threading.Lock``:
+the connection is shared across FastAPI's threadpool (``check_same_thread=False``),
+and CPython's per-connection statement cache corrupts under concurrent use (probes
+showed spurious None rows, NULL columns, and InterfaceError at ~4-12% of overlapped
+calls). One lock drove that to zero; the cost is irrelevant for a local app.
 """
 
+import contextlib
 import json
 import sqlite3
 import threading
@@ -54,17 +58,18 @@ class Repo:
 
     def __init__(self, conn: sqlite3.Connection):
         self._conn = conn
-        self._write_lock = threading.Lock()
+        self._lock = threading.Lock()
 
     def _checkpoint(self) -> None:
-        """Fold the WAL back into the main .db and truncate it.
+        """Fold the WAL back into the main .db and truncate it (best-effort).
 
         Privacy: landmark data must never linger in a `-wal` sidecar after a crash —
-        the README promises that deleting `data/runtime/` erases everything, and the
-        one-file story should hold as tightly as possible. Called after every write
-        (trivial cost for a local single-user app).
+        the README promises that deleting `data/runtime/` erases everything. Called
+        after every write; acquires the lock itself, so call it only OUTSIDE locked
+        regions. Failures are swallowed: the next write retries the truncate.
         """
-        self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        with self._lock, contextlib.suppress(sqlite3.OperationalError):
+            self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
 
     # --- scans -------------------------------------------------------------------------------
 
@@ -76,7 +81,7 @@ class Repo:
         landmark_model: str,
         app_version: str,
     ) -> None:
-        with self._write_lock, self._conn:
+        with self._lock, self._conn:
             self._conn.execute(
                 "INSERT INTO scans (id, created_at, app_version, landmark_model,"
                 " landmarks_json, quality_json) VALUES (?, ?, ?, ?, ?, ?)",
@@ -92,7 +97,8 @@ class Repo:
         self._checkpoint()
 
     def get_scan(self, scan_id: str) -> dict[str, Any] | None:
-        row = self._conn.execute("SELECT * FROM scans WHERE id = ?", (scan_id,)).fetchone()
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM scans WHERE id = ?", (scan_id,)).fetchone()
         if row is None:
             return None
         return {
@@ -120,7 +126,7 @@ class Repo:
     ) -> None:
         """Persist a recommendation. ``request_extras`` must be JSON-serializable
         (rx / lens_intent / pd_monocular as plain dicts)."""
-        with self._write_lock, self._conn:
+        with self._lock, self._conn:
             self._conn.execute(
                 "INSERT INTO recommendations (id, scan_id, created_at, user_id, pd_mm,"
                 " mm_per_unit, measurements_json, request_json, output_json, engine_version,"
@@ -142,7 +148,10 @@ class Repo:
         self._checkpoint()
 
     def get_recommendation(self, rec_id: str) -> dict[str, Any] | None:
-        row = self._conn.execute("SELECT * FROM recommendations WHERE id = ?", (rec_id,)).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM recommendations WHERE id = ?", (rec_id,)
+            ).fetchone()
         if row is None:
             return None
         return {
@@ -167,7 +176,7 @@ class Repo:
         Raises NotFound if the referenced recommendation (or catalog frame, when given)
         does not exist.
         """
-        with self._write_lock, self._conn:
+        with self._lock, self._conn:
             rec = self._conn.execute(
                 "SELECT 1 FROM recommendations WHERE id = ?", (fb.recommendation_id,)
             ).fetchone()
@@ -212,7 +221,7 @@ class Repo:
 
         Raises NotFound when the referenced recommendation or catalog frame is unknown.
         """
-        with self._write_lock, self._conn:
+        with self._lock, self._conn:
             if (
                 self._conn.execute(
                     "SELECT 1 FROM recommendations WHERE id = ?", (rating.recommendation_id,)
@@ -261,7 +270,7 @@ class Repo:
     # --- frames ------------------------------------------------------------------------------
 
     def upsert_frames(self, frames: list[CatalogFrame]) -> None:
-        with self._write_lock, self._conn:
+        with self._lock, self._conn:
             self._conn.executemany(_FRAME_UPSERT_SQL, [_frame_to_row(f) for f in frames])
 
     def list_frames(
@@ -295,9 +304,13 @@ class Repo:
             sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY frame_id LIMIT ?"
         params.append(limit)
-        rows = self._conn.execute(sql, params).fetchall()
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
         return [_row_to_frame(row) for row in rows]
 
     def get_frame(self, frame_id: str) -> CatalogFrame | None:
-        row = self._conn.execute("SELECT * FROM frames WHERE frame_id = ?", (frame_id,)).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM frames WHERE frame_id = ?", (frame_id,)
+            ).fetchone()
         return None if row is None else _row_to_frame(row)

@@ -3,6 +3,7 @@
 Every non-2xx response uses the envelope: {"error": {"code", "message", "details"}}.
 """
 
+import math
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -51,6 +52,11 @@ class MediapipeUnavailable(GlassFitError):
     status_code = 503
 
 
+class InvalidLandmarks(GlassFitError):
+    code = "INVALID_LANDMARKS"
+    status_code = 422
+
+
 def _envelope(code: str, message: str, details: dict[str, Any]) -> dict[str, Any]:
     return {"error": {"code": code, "message": message, "details": details}}
 
@@ -65,7 +71,18 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error(_request: Request, exc: RequestValidationError) -> JSONResponse:
-        errors = jsonable_encoder(exc.errors(), custom_encoder={Exception: str})
+        # Validation errors echo the offending input — which can itself be NaN/inf and
+        # would crash the JSON response reporting it. Stringify non-finite floats.
+        def json_safe(obj: Any) -> Any:
+            if isinstance(obj, float) and not math.isfinite(obj):
+                return repr(obj)
+            if isinstance(obj, dict):
+                return {k: json_safe(v) for k, v in obj.items()}
+            if isinstance(obj, list | tuple):
+                return [json_safe(v) for v in obj]
+            return obj
+
+        errors = json_safe(jsonable_encoder(exc.errors(), custom_encoder={Exception: str}))
         return JSONResponse(
             status_code=422,
             content=_envelope("VALIDATION_ERROR", "Request validation failed", {"errors": errors}),

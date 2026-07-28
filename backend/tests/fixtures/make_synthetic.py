@@ -20,6 +20,7 @@ from pathlib import Path
 
 import numpy as np
 
+from glassfit.catalog.match import EMPIRICAL_JAW_RATIO, EMPIRICAL_LENGTH_RATIO
 from glassfit.measure import indices as idx
 from glassfit.measure.extractor import TRAGUS_BEHIND_FACE_OVAL_MM
 
@@ -63,12 +64,13 @@ def _key_positions_mm(pd: float, zygoma: float, temple: float) -> dict[int, tupl
         idx.FACE_SIDE_LEFT: (hz, 25, 55),
         idx.TEMPLE_RIGHT: (-ht, -5, 45),
         idx.TEMPLE_LEFT: (ht, -5, 45),
-        idx.JAW_RIGHT[0]: (-48, 60, 40),
-        idx.JAW_LEFT[0]: (48, 60, 40),
-        idx.JAW_RIGHT[1]: (-45, 65, 35),
-        idx.JAW_LEFT[1]: (45, 65, 35),
-        idx.CHIN: (0, 85, 5),
-        idx.FOREHEAD_TOP: (0, -55, 10),
+        # jaw/face-length proportions come from the shared empirical constants
+        idx.JAW_RIGHT[0]: (-EMPIRICAL_JAW_RATIO / 2 * zygoma, 60, 40),
+        idx.JAW_LEFT[0]: (EMPIRICAL_JAW_RATIO / 2 * zygoma, 60, 40),
+        idx.JAW_RIGHT[1]: (-0.43 * zygoma, 65, 35),
+        idx.JAW_LEFT[1]: (0.43 * zygoma, 65, 35),
+        idx.CHIN: (0, (EMPIRICAL_LENGTH_RATIO - 0.48) * zygoma, 5),
+        idx.FOREHEAD_TOP: (0, -0.48 * zygoma, 10),
     }
     # iris rings around each center (in-plane cross) — physical diameter 11.7 mm
     ring_offsets = [
@@ -111,9 +113,9 @@ def _expected(pd: float, zygoma: float, temple: float) -> dict:
         "ear_height_asymmetry_mm": 0.0,
         "face_wrap_radius_mm": wrap_radius,
         "behind_ear_drop_mm": 0.4 * (60.0 - 25.0),
-        # forehead (0,-55,10) -> chin (0,85,5); jaw 58<->288 at (±48,60,40)
-        "face_length_mm": math.hypot(140.0, 5.0),
-        "jaw_width_mm": 96.0,
+        # forehead/chin span = LENGTH_RATIO * zygoma (with 5mm z offset); jaw = JAW_RATIO * zygoma
+        "face_length_mm": math.hypot(EMPIRICAL_LENGTH_RATIO * zygoma, 5.0),
+        "jaw_width_mm": EMPIRICAL_JAW_RATIO * zygoma,
     }
 
 

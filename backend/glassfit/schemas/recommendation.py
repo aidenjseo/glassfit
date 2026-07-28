@@ -31,6 +31,12 @@ class RecommendationRequest(BaseModel):
         provided = [x is not None for x in (self.scan_id, self.landmarks, self.measurements)]
         if sum(provided) != 1:
             raise ValueError("provide exactly one of scan_id, landmarks, or measurements")
+        # bounds on the request's monocular PDs only — the shared PerSide type also
+        # carries signed/zero outputs (inset, raise) where these bounds would be wrong
+        if self.pd_monocular is not None:
+            for side in (self.pd_monocular.right, self.pd_monocular.left):
+                if not 20.0 <= side <= 45.0:
+                    raise ValueError("each monocular PD must be between 20 and 45 mm")
         return self
 
 

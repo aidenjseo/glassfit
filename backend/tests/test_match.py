@@ -4,31 +4,11 @@ import json
 
 from conftest import FakeBackend, jpeg_upload_files
 from fastapi.testclient import TestClient
+from schema_builders import sample_frame as frame
 from schema_builders import sample_measurements
 
 from glassfit.catalog.match import NEUTRAL, MatchContext, match_frames, score_frame
-from glassfit.schemas import CatalogFrame, FrameDims
-
-
-def frame(**overrides) -> CatalogFrame:
-    base = {
-        "frame_id": "F-1",
-        "name": "Test",
-        "shape": "rectangle",
-        "material": "acetate",
-        "rim": "full",
-        "a_mm": 52.0,
-        "b_mm": 38.0,
-        "dbl_mm": 18.0,
-        "ed_mm": 55.0,
-        "temple_mm": 145.0,
-        "weight_g": 22.0,
-        "bridge_style": "keyhole",
-        "nose_pads": "fixed_acetate",
-        "tags": [],
-    }
-    return CatalogFrame(**{**base, **overrides})
-
+from glassfit.schemas import FrameDims
 
 TARGETS = FrameDims(a_mm=52.0, b_mm=38.0, dbl_mm=18.0, ed_mm=55.0, temple_length_mm=145.0)
 DIMS_ONLY = MatchContext(targets=TARGETS)
@@ -84,7 +64,7 @@ def test_adjustable_pads_soften_bridge_error() -> None:
 
 
 def test_deep_lens_near_cheeks_penalized_and_flagged() -> None:
-    # sample cheek clearance ~5.75mm; B=44 at pupil ratio ~0.545 puts ~20mm below the pupil
+    # sample cheek clearance ~5.75mm; B=44 at pupil ratio ~0.545 puts ~24mm below the pupil
     ctx = measured_ctx()
     deep = score_frame(frame(b_mm=44.0), ctx)
     shallow = score_frame(frame(b_mm=36.0), ctx)
@@ -276,3 +256,15 @@ def test_declared_zero_wrap_is_respected() -> None:
     assert flat is not None and unset is not None
     assert flat.components["wrap_harmony"] == 0.0  # |0-6|/6 -> fully off-target
     assert unset.components["wrap_harmony"] > flat.components["wrap_harmony"]
+
+
+def test_lens_height_monotonic_in_pupil_ratio() -> None:
+    # Regression: below-pupil depth was computed as B*(1-ratio) — inverted. The ratio
+    # measures UP from the lens bottom, so a HIGHER pupil means MORE lens below it.
+    from glassfit.schemas import PerSide
+
+    deep = frame(b_mm=44.0)
+    low_pupil = score_frame(deep, measured_ctx(pupil_height_ratio=PerSide(right=0.40, left=0.40)))
+    high_pupil = score_frame(deep, measured_ctx(pupil_height_ratio=PerSide(right=0.70, left=0.70)))
+    assert low_pupil is not None and high_pupil is not None
+    assert high_pupil.components["lens_height"] < low_pupil.components["lens_height"]

@@ -1,5 +1,7 @@
 """API tests over the full wired app (fake detector, temp DB, no mediapipe)."""
 
+import json
+
 from conftest import FakeBackend, jpeg_upload_files, load_landmark_fixture
 from fastapi.testclient import TestClient
 
@@ -137,3 +139,47 @@ def test_scan_detector_unavailable(make_app, tmp_path) -> None:
         resp = client.post("/api/v1/scan", files=jpeg_upload_files(3))
     assert resp.status_code == 503
     assert resp.json()["error"]["code"] == "MEDIAPIPE_UNAVAILABLE"
+
+
+def test_inline_measurements_with_zero_dimension_rejected(client: TestClient) -> None:
+    from schema_builders import sample_measurements
+
+    good = json.loads(sample_measurements().model_dump_json())
+    bad = {**good, "zygoma_width_mm": 0.0}
+    resp = client.post("/api/v1/recommendations", json={"pd_mm": 63.0, "measurements": bad})
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_nan_landmark_rejected_at_schema_boundary(client: TestClient) -> None:
+    fixture = load_landmark_fixture("synthetic_average")["landmark_set"]
+    points = [list(p) for p in fixture["points"]]
+    points[100][2] = float("nan")
+    # json.dumps emits a bare NaN literal — exactly what a buggy client would send
+    body = json.dumps({"pd_mm": 63.0, "landmarks": {**fixture, "points": points}})
+    resp = client.post(
+        "/api/v1/recommendations", content=body, headers={"Content-Type": "application/json"}
+    )
+    assert resp.status_code == 422
+
+
+def test_degenerate_landmarks_return_422_envelope(client: TestClient) -> None:
+    # all points identical -> zero interpupillary distance -> INVALID_LANDMARKS, not a 500
+    landmarks = {"points": [[0.5, 0.5, 0.0]] * 478, "image_width": 1280, "image_height": 720}
+    resp = client.post("/api/v1/recommendations", json={"pd_mm": 63.0, "landmarks": landmarks})
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "INVALID_LANDMARKS"
+
+
+def test_out_of_range_monocular_pd_rejected(client: TestClient) -> None:
+    fixture = load_landmark_fixture("synthetic_average")
+    resp = client.post(
+        "/api/v1/recommendations",
+        json={
+            "pd_mm": 63.0,
+            "landmarks": fixture["landmark_set"],
+            "pd_monocular": {"right": 3.15, "left": 59.85},  # sums to 63 but is nonsense
+        },
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"

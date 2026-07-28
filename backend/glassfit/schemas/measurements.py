@@ -48,16 +48,18 @@ class MeasurementQuality(BaseModel):
 
 
 class FaceMeasurements(BaseModel):
-    mm_per_unit: float
-    pd_binocular_mm: float
+    # gt=0 on the structurally-positive lengths: a zero/negative zygoma from inline
+    # measurements would divide-by-zero shape ratios and poison stored recommendations.
+    mm_per_unit: float = Field(gt=0)
+    pd_binocular_mm: float = Field(gt=0)
     pd_monocular_mm: PerSide  # nasion-split monocular PDs
     bridge: BridgeWidths
     bridge_crest_height_mm: float
-    zygoma_width_mm: float
-    temple_width_mm: float
-    face_length_mm: float  # forehead-top (10) to chin (152) — drives shape affinity
-    jaw_width_mm: float  # gonion-to-gonion (58<->288) — drives shape affinity
-    face_wrap_radius_mm: float
+    zygoma_width_mm: float = Field(gt=0)
+    temple_width_mm: float = Field(gt=0)
+    face_length_mm: float = Field(gt=0)  # forehead-top (10) to chin (152) — shape affinity
+    jaw_width_mm: float = Field(gt=0)  # gonion-to-gonion (58<->288) — shape affinity
+    face_wrap_radius_mm: float = Field(gt=0)
     cheek_clearance_mm: PerSide
     hinge_to_ear_mm: PerSide  # ESTIMATE — mesh has no ear landmarks (low confidence)
     # SIGN CONVENTION (extractor + rules engine agree): > 0 means the subject's RIGHT

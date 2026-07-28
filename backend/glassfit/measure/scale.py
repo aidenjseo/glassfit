@@ -122,6 +122,7 @@ def mm_per_unit(pd_mm: float, pts: np.ndarray, has_iris: bool) -> tuple[float, l
         eye_b = midpoint(pts[idx.OUTER_CANTHUS_LEFT], pts[idx.INNER_CANTHUS_LEFT])
         pd_units = dist(eye_a, eye_b)
         warnings.append(PD_SCALE_FALLBACK_WARNING)
-    if pd_units <= 0.0:
-        raise ValueError("degenerate landmarks: zero interpupillary distance")
+    # `not (x > 0)` (rather than `x <= 0`) also catches NaN, whose comparisons are False
+    if not pd_units > 0.0:
+        raise ValueError("degenerate landmarks: zero or non-finite interpupillary distance")
     return pd_mm / pd_units, warnings

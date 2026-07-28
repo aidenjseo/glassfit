@@ -1,14 +1,17 @@
 """Shared primitive schemas."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated
 
 from pydantic import BaseModel, Field, field_validator
 
 if TYPE_CHECKING:
     import numpy as np
 
+# NaN/inf are rejected at the schema boundary: a single NaN coordinate would sail
+# through downstream guards (NaN comparisons are False) and crash deep in numpy.
+FiniteFloat = Annotated[float, Field(allow_inf_nan=False)]
 # Normalized MediaPipe coordinates: x,y in [0,1] relative to image width/height, z ~ x-scale.
-Point3 = tuple[float, float, float]
+Point3 = tuple[FiniteFloat, FiniteFloat, FiniteFloat]
 # Pixel coordinates in the captured frame.
 Point2 = tuple[float, float]
 
