@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
+  <!-- GlassFit hero: shown in the camera stage before the camera starts.
+       Same visual language as the pose icons and frame diagram:
+       ink stage (#121212), off-white line art (#f9f8f5), green frames (#88b04b),
+       faint measurement ticks (#8a877e). Original artwork, no external assets. -->
+  <rect width="800" height="600" fill="#121212"/>
+
+  <!-- corner registration marks, echoing the live-camera brackets -->
+  <g stroke="#88b04b" stroke-width="2" opacity="0.9">
+    <path d="M24 44 V24 H44"/>
+    <path d="M756 24 H776 V44"/>
+    <path d="M776 556 V576 H756"/>
+    <path d="M44 576 H24 V556"/>
+  </g>
+
+  <!-- dashed guide oval, echoing the scan guide -->
+  <ellipse cx="400" cy="300" rx="168" ry="232" fill="none"
+           stroke="#88b04b" stroke-opacity="0.45" stroke-width="2.5"
+           stroke-dasharray="10 13"/>
+
+  <!-- face -->
+  <g fill="none" stroke="#f9f8f5" stroke-width="3" stroke-linecap="round">
+    <ellipse cx="400" cy="290" rx="110" ry="150"/>
+    <!-- shoulders -->
+    <path d="M212 600 q28 -96 118 -122 M588 600 q-28 -96 -118 -122"/>
+    <!-- nose and smile -->
+    <path d="M402 312 q-10 28 3 36"/>
+    <path d="M368 396 q32 24 64 0"/>
+  </g>
+  <g fill="#f9f8f5">
+    <circle cx="342" cy="290" r="6.5"/>
+    <circle cx="458" cy="290" r="6.5"/>
+  </g>
+
+  <!-- the glasses -->
+  <g fill="none" stroke="#88b04b" stroke-width="4.5" stroke-linecap="round">
+    <rect x="296" y="258" width="90" height="64" rx="19"/>
+    <rect x="414" y="258" width="90" height="64" rx="19"/>
+    <path d="M386 284 q14 -11 28 0"/>
+    <path d="M296 288 l-19 -3 M504 288 l19 -3"/>
+  </g>
+
+  <!-- fitting measurements, echoing the results frame diagram -->
+  <g stroke="#8a877e" stroke-width="2" opacity="0.85">
+    <path d="M296 348 H386 M296 342 v12 M386 342 v12"/>
+    <path d="M386 240 H414 M386 234 v12 M414 234 v12"/>
+    <path d="M264 258 V322 M258 258 h12 M258 322 h12"/>
+  </g>
+</svg>

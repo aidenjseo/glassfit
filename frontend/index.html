@@ -8,12 +8,15 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+  <div class="tagline-strip">
+    <p>Scan your face, get frame sizes that fit &mdash; right from your webcam, entirely on your machine.</p>
+  </div>
   <header class="app-header">
-    <span class="brand">Glass<em>Fit</em></span>
+    <span class="brand">GLASS<em>FIT</em></span>
     <ol class="steps" aria-label="Progress">
-      <li data-stepdot="camera" class="current"><span>1</span>scan</li>
-      <li data-stepdot="review"><span>2</span>inputs</li>
-      <li data-stepdot="results"><span>3</span>results</li>
+      <li data-stepdot="camera" class="current"><span>1</span>Scan</li>
+      <li data-stepdot="review"><span>2</span>Inputs</li>
+      <li data-stepdot="results"><span>3</span>Results</li>
     </ol>
   </header>
 
@@ -45,6 +48,10 @@
         </li>
       </ol>
       <div class="stage">
+        <!-- Shown until the camera starts. Original line-art illustration (img/hero.svg);
+             drop a photo in as img/hero.jpg and point src at it to swap. -->
+        <img id="stage-hero" class="stage-hero" src="/img/hero.svg" alt=""
+             aria-hidden="true" onerror="this.hidden = true">
         <video id="preview" playsinline muted autoplay></video>
         <div class="brackets" aria-hidden="true"></div>
         <div class="guide" aria-hidden="true"><div class="oval"></div></div>

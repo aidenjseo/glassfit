@@ -95,6 +95,7 @@ async function startCamera() {
   $('scan-error').hidden = true;
   try {
     await camera.start();
+    $('stage-hero').hidden = true;
     $('btn-scan').disabled = false;
     $('btn-start').hidden = true;
     announce('Camera ready. Center your face in the oval, then press Begin scan.');
